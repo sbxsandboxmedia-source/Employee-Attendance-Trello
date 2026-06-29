@@ -165,9 +165,15 @@
         let isFirebaseConnected = false;
         let breakTimer = null;
 
-        // Firebase Initial Setup with Sandbox Environment Configs
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'proworkspace-kanban-default';
-        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        const firebaseConfig = {
+  apiKey: "AIzaSyDZtoOSWol93ptjdQpm4QHQWShcVr7aQXc",
+  authDomain: "employee-tracker-988ab.firebaseapp.com",
+  projectId: "employee-tracker-988ab",
+  storageBucket: "employee-tracker-988ab.firebasestorage.app",
+  messagingSenderId: "387191923861",
+  appId: "1:387191923861:web:5bf9054516f3328219a79c",
+  measurementId: "G-MR53B8T617"
+};
 
         // Reactive Local Memory state (Highly detailed, mirrors real Firestore state instantly)
         const LOCAL_DATABASE = {
