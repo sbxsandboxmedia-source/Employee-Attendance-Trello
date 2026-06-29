@@ -16,7 +16,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Secondary application instance taaki Admin logged-in reh kar naye employees trigger kar sake
 const secondaryApp = initializeApp(firebaseConfig, "Secondary");
 const secondaryAuth = getAuth(secondaryApp);
 
@@ -28,11 +27,15 @@ const todayStr = () => new Date().toISOString().split('T')[0];
 export async function loginUser(email, password) {
     try {
         const cred = await signInWithEmailAndPassword(auth, email, password);
-        const userDoc = await getDoc(doc(db, "users", cred.user.uid));
+        // Purane 'employees' collection se role check karein
+        const userDoc = await getDoc(doc(db, "employees", cred.user.uid));
         if (userDoc.exists()) {
             const role = userDoc.data().role;
             if (role === "admin") window.location.href = "admin.html";
             else window.location.href = "employee.html";
+        } else {
+            // Agar employee collection me role field nahi hai, to default employee dashboard par bhejein
+            window.location.href = "employee.html";
         }
     } catch (err) { alert("Error logging in: " + err.message); }
 }
@@ -42,12 +45,13 @@ export function logoutUser() {
 }
 
 // ==========================================
-// ADMIN DASHBOARD LOGIC
+// ADMIN DASHBOARD LOGIC (Aapke Existing Data Ke Liye)
 // ==========================================
 export async function registerEmployee(name, email, password) {
     try {
         const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-        await setDoc(doc(db, "users", cred.user.uid), {
+        // Naye registration ko bhi aapke purane 'employees' collection me add karega
+        await setDoc(doc(db, "employees", cred.user.uid), {
             name: name,
             email: email,
             role: "employee"
@@ -59,12 +63,15 @@ export async function registerEmployee(name, email, password) {
 
 export async function loadEmployeesForAdmin(dropdownId) {
     const select = document.getElementById(dropdownId);
-    onSnapshot(collection(db, "users"), (snapshot) => {
+    // Aapke purane 'employees' collection se live data fetch karega
+    onSnapshot(collection(db, "employees"), (snapshot) => {
         select.innerHTML = '<option value="">Choose Employee...</option>';
         snapshot.forEach((doc) => {
             const data = doc.data();
             if(data.role !== 'admin') {
-                select.innerHTML += `<option value="${doc.id}">${data.name}</option>`;
+                // Agar field ka naam 'name' ya 'empName' kuch bhi ho, backup handler laga diya hai
+                const empName = data.name || data.empName || data.email;
+                select.innerHTML += `<option value="${doc.id}">${empName}</option>`;
             }
         });
     });
@@ -72,23 +79,32 @@ export async function loadEmployeesForAdmin(dropdownId) {
 
 export function listenToAttendanceLive(containerId) {
     const container = document.getElementById(containerId);
-    onSnapshot(collection(db, "attendance"), async (snapshot) => {
+    onSnapshot(collection(db, "attendance"), (snapshot) => {
         container.innerHTML = "";
         if (snapshot.empty) { container.innerHTML = "<p>No logs recorded today.</p>"; return; }
         
         snapshot.forEach(async (attendanceDoc) => {
             const log = attendanceDoc.data();
-            const userSnap = await getDoc(doc(db, "users", log.employee_id));
-            const name = userSnap.exists() ? userSnap.data().name : "Unknown Employee";
+            // Aapke data structure ke mutabik 'empId' check karega
+            const employeeId = log.empId || log.employee_id;
             
-            const formatTime = (ts) => ts ? new Date(ts.seconds * 1000).toLocaleTimeString() : "--:--";
+            if (!employeeId) return;
+
+            const userSnap = await getDoc(doc(db, "employees", employeeId));
+            const name = userSnap.exists() ? (userSnap.data().name || userSnap.data().email) : "Employee (" + employeeId.substring(0,5) + ")";
+            
+            const formatTime = (timeVal) => {
+                if (!timeVal) return "--:--";
+                // Agar date string format me save hai to direct slice, agar Firebase Timestamp hai to convert karega
+                if (typeof timeVal === 'string') return timeVal.includes('T') ? timeVal.split('T')[1].substring(0,5) : timeVal;
+                return new Date(timeVal.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            };
             
             container.innerHTML += `
                 <div style="padding:10px; border-bottom:1px solid #eee;">
-                    <strong>${name}</strong> (${log.date}) <br>
-                    <span style="color:green;">In: ${formatTime(log.check_in)}</span> | 
-                    <span style="color:orange;">Break Start: ${formatTime(log.break_start)}</span> | 
-                    <span style="color:blue;">Break End: ${formatTime(log.break_end)}</span> | 
+                    <strong>${name}</strong> (${log.date || todayStr()}) <br>
+                    <span style="color:green;">In: ${formatTime(log.entry || log.check_in)}</span> | 
+                    <span style="color:orange;">Break: ${formatTime(log.breaks ? log.breaks.createdAt : log.break_start)}</span> | 
                     <span style="color:red;">Out: ${formatTime(log.check_out)}</span>
                 </div>`;
         });
@@ -115,9 +131,9 @@ export function setupEmployeeAttendanceUI() {
     onAuthStateChanged(auth, async (user) => {
         if (!user) return;
         
-        const docRef = doc(db, "users", user.uid);
+        const docRef = doc(db, "employees", user.uid);
         const userSnap = await getDoc(docRef);
-        if(userSnap.exists()) document.getElementById('welcomeText').innerText = `Welcome, ${userSnap.data().name}`;
+        if(userSnap.exists()) document.getElementById('welcomeText').innerText = `Welcome, ${userSnap.data().name || userSnap.data().email}`;
 
         const attRef = doc(db, "attendance", `${user.uid}_${todayStr()}`);
         
@@ -135,26 +151,25 @@ export function setupEmployeeAttendanceUI() {
             }
 
             const data = docSnap.data();
-            if (data.check_in && !data.break_start && !data.check_out) {
+            const hasCheckedIn = data.entry || data.check_in;
+            const hasCheckedOut = data.check_out;
+
+            if (hasCheckedIn && !data.breaks && !hasCheckedOut) {
                 statusText.innerText = "Status: Working active";
                 cInBtn.disabled = true; bStartBtn.disabled = false; bEndBtn.style.display="none"; bStartBtn.style.display="block"; cOutBtn.disabled = false;
-            } else if (data.break_start && !data.break_end) {
+            } else if (data.breaks && (!data.breaks.end && !data.break_end)) {
                 statusText.innerText = "Status: On Break";
                 bStartBtn.style.display = "none"; bEndBtn.style.display = "block"; cOutBtn.disabled = true;
-            } else if (data.break_end && !data.check_out) {
-                statusText.innerText = "Status: Returned from Break / Working";
-                bEndBtn.style.display = "none"; bStartBtn.style.display = "block"; bStartBtn.disabled = false; cOutBtn.disabled = false;
-            } else if (data.check_out) {
+            } else if (hasCheckedOut) {
                 statusText.innerText = "Status: Shift Completed (Checked Out)";
                 cInBtn.disabled = true; bStartBtn.disabled = true; bEndBtn.disabled = true; cOutBtn.disabled = true;
             }
         });
 
-        // Click Triggers setup
-        document.getElementById('btnCheckIn').onclick = () => setDoc(attRef, { employee_id: user.uid, date: todayStr(), check_in: new Date() }, { merge: true });
-        document.getElementById('btnBreakStart').onclick = () => updateDoc(attRef, { break_start: new Date() });
-        document.getElementById('btnBreakEnd').onclick = () => updateDoc(attRef, { break_end: new Date() });
-        document.getElementById('btnCheckOut').onclick = () => updateDoc(attRef, { check_out: new Date() });
+        document.getElementById('btnCheckIn').onclick = () => setDoc(attRef, { empId: user.uid, date: todayStr(), entry: new Date().toISOString() }, { merge: true });
+        document.getElementById('btnBreakStart').onclick = () => updateDoc(attRef, { "breaks.createdAt": new Date().toISOString() });
+        document.getElementById('btnBreakEnd').onclick = () => updateDoc(attRef, { "breaks.end": new Date().toISOString() });
+        document.getElementById('btnCheckOut').onclick = () => updateDoc(attRef, { check_out: new Date().toISOString() });
     });
 }
 
@@ -174,8 +189,8 @@ export function setupEmployeeTasksUI() {
                 const html = `
                     <div class="task-card">
                         <h4>${task.title}</h4>
-                        <p>${task.description}</p>
-                        <p><strong>Due:</strong> ${task.due_date}</p>
+                        <p>${task.description || ''}</p>
+                        <p><strong>Due:</strong> ${task.due_date || task.dueDate || ''}</p>
                         <div class="task-actions">
                             ${task.status !== 'todo' ? `<button onclick="window.moveTask('${id}', 'todo')">⏮ To Do</button>` : ''}
                             ${task.status !== 'progress' ? `<button onclick="window.moveTask('${id}', 'progress')">⚙ Work</button>` : ''}
@@ -188,7 +203,6 @@ export function setupEmployeeTasksUI() {
     });
 }
 
-// Global scope injection buttons shift execution ke liye
 window.moveTask = async (taskId, newStatus) => {
     await updateDoc(doc(db, "tasks", taskId), { status: newStatus });
 };
