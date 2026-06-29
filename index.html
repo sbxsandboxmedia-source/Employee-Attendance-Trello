@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProWorkspace - Trello-Style Attendance & Rewards Hub</title>
+    <!-- Tailwind CSS for premium look and responsiveness -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Google Font for clean modern typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons for dashboards, badges, and actions -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            500: '#8b5cf6',
+                            600: '#7c3aed',
+                            700: '#6d28d9',
+                            900: '#4c1d95',
+                        },
+                        slate: {
+                            950: '#030712'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #030712;
+            color: #f3f4f6;
+        }
+        /* Custom ultra-thin scrollbar mimicking premium apps like Trello */
+        .trello-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .trello-scroll::-webkit-scrollbar-track {
+            background: rgba(17, 24, 39, 0.4);
+            border-radius: 8px;
+        }
+        .trello-scroll::-webkit-scrollbar-thumb {
+            background: rgba(139, 92, 246, 0.3);
+            border-radius: 8px;
+        }
+        .trello-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(139, 92, 246, 0.6);
+        }
+        /* Active status pulse animation */
+        .status-pulse {
+            position: relative;
+        }
+        .status-pulse::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 1; }
+            50% { transform: scale(1.8); opacity: 0; }
+            100% { transform: scale(0.95); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="h-full overflow-hidden flex flex-col">
+
+    <!-- Top Navigation Header -->
+    <header class="flex items-center justify-between px-6 py-4 bg-gray-900 border-b border-gray-800 z-30">
+        <div class="flex items-center gap-3">
+            <div class="p-2.5 bg-brand-600 rounded-xl shadow-lg shadow-brand-500/30">
+                <i class="fa-solid fa-square-poll-horizontal text-xl text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-black tracking-tight text-white flex items-center gap-2">
+                    ProWorkspace <span class="text-xs bg-brand-500/20 text-brand-400 px-2 py-0.5 rounded font-bold border border-brand-500/30">v2.0</span>
+                </h1>
+                <p class="text-[11px] text-gray-400">Kanban Attendance & Gamified Work Hub</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <!-- Firebase Connection Badging Status -->
+            <div id="firebase-status" class="flex items-center gap-2 px-3 py-1.5 bg-brand-500/10 border border-brand-500/20 rounded-full text-xs text-brand-300 font-semibold">
+                <span class="relative flex h-2.5 w-2.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
+                </span>
+                <span id="sync-label">Syncing...</span>
+            </div>
+
+            <!-- Portal View Badge -->
+            <div class="flex bg-gray-950 p-1 rounded-xl border border-gray-800">
+                <button onclick="switchPortal('employee')" id="btn-portal-employee" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-brand-600 text-white">
+                    <i class="fa-solid fa-user-circle mr-1"></i> Employee Hub
+                </button>
+                <button onclick="switchPortal('admin')" id="btn-portal-admin" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-user-shield mr-1"></i> Admin Portal
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="flex-1 overflow-hidden relative">
+        <div id="workspace-content" class="h-full w-full">
+            <!-- Content will be dynamically rendered here via JavaScript -->
+        </div>
+    </main>
+
+    <!-- Global Achievement Unlock Toast/Modal -->
+    <div id="achievement-unlocked-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 pointer-events-none opacity-0 transition-all duration-500">
+        <div class="bg-gradient-to-b from-gray-900 to-gray-950 border-2 border-amber-500 rounded-3xl w-full max-w-sm p-8 text-center shadow-2xl shadow-amber-500/20 transform scale-75 transition-all duration-500">
+            <div class="inline-flex p-5 bg-amber-500/10 text-amber-400 rounded-full mb-4 animate-bounce">
+                <i class="fa-solid fa-trophy text-5xl"></i>
+            </div>
+            <span class="block text-xs font-bold text-amber-400 uppercase tracking-widest">Achievement Unlocked!</span>
+            <h3 id="achievement-title" class="text-2xl font-black text-white mt-1">Early Bird</h3>
+            <p id="achievement-desc" class="text-gray-400 text-sm mt-2">Checked in early today! Keep up the prompt work.</p>
+            <div class="mt-6 py-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm font-bold text-amber-300">
+                +100 XP Rewards Applied! ⚡
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert / Custom Modal Dialog System -->
+    <div id="custom-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 pointer-events-none opacity-0 transition-all duration-300">
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl transform scale-90 transition-all duration-300">
+            <h4 id="modal-title" class="text-lg font-bold text-white mb-2">Notice</h4>
+            <p id="modal-desc" class="text-gray-400 text-sm leading-relaxed mb-6">Details here...</p>
+            <div class="flex justify-end gap-3" id="modal-actions">
+                <!-- Action buttons dynamic injection -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Notification Popups (Toast UI) -->
+    <div id="toast-bin" class="fixed bottom-6 right-6 space-y-3 z-50"></div>
+
+    <!-- Firebase Scripts and Frontend Core Application logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global state vars
+        let currentUserId = "emp_abhishek"; // Set default user session
+        let activePortal = "employee"; // Starts in secure employee privacy view
+        let app, db, auth;
+        let isFirebaseConnected = false;
+        let breakTimer = null;
+
+        // Firebase Initial Setup with Sandbox Environment Configs
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'proworkspace-kanban-default';
+        const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+
+        // Reactive Local Memory state (Highly detailed, mirrors real Firestore state instantly)
+        const LOCAL_DATABASE = {
+            users: {
+                "emp_abhishek": {
+                    uid: "emp_abhishek",
+                    name: "Abhishek Ranjan",
+                    avatar: "AR",
+                    status: "Offline", // Offline, Available, Active Work, Break, Checked Out
+                    checkInTime: "--",
+                    checkOutTime: "--",
+                    points: 120,
+                    level: 1,
+                    breakMinutes: 0,
+                    breakLimit: 30, // threshold of warning in minutes
+                    achievements: []
+                },
+                "emp_rohit": {
+                    uid: "emp_rohit",
+                    name: "Rohit Deshmukh",
+                    avatar: "RD",
+                    status: "Active Work",
+                    checkInTime: "09:05 AM",
+                    checkOutTime: "--",
+                    points: 430,
+                    level: 3,
+                    breakMinutes: 10,
+                    breakLimit: 30,
+                    achievements: ["Early Bird"]
+                },
+                "emp_preeti": {
+                    uid: "emp_preeti",
+                    name: "Preeti Sinha",
+                    avatar: "PS",
+                    status: "Break",
+                    checkInTime: "09:28 AM",
+                    checkOutTime: "--",
+                    points: 290,
+                    level: 2,
+                    breakMinutes: 32, // triggers red pulse alert for admins
+                    breakLimit: 30,
+                    achievements: ["Early Bird"]
+                }
+            },
+            tasks: {
+                "task_1": { id: "task_1", uid: "emp_abhishek", client: "SIA Jewels", title: "Landing Page SEO Optimization", desc: "Optimize meta tags, image alt texts, and structure keywords for listing.", status: "todo", priority: "High", pointsReward: 40 },
+                "task_2": { id: "task_2", uid: "emp_abhishek", client: "SIA Jewels", title: "Social Ad Poster Draft", desc: "Create high-converting minimalist social posters in Figma.", status: "in_progress", priority: "Medium", pointsReward: 30 },
+                "task_3": { id: "task_3", uid: "emp_abhishek", client: "HealthPlus App", title: "Integrate Booking Flow API", desc: "Map calendar slots to API endpoint for fast booking response.", status: "done", priority: "High", pointsReward: 60 },
+                "task_4": { id: "task_4", uid: "emp_rohit", client: "Decors Co", title: "E-Commerce Payment Gateway", desc: "Razorpay webhook configuration and validation check.", status: "in_progress", priority: "High", pointsReward: 50 }
+            }
+        };
+
+        // Initialize Firebase
+        const initFirebase = async () => {
+            if (rawConfig) {
+                try {
+                    const firebaseConfig = JSON.parse(rawConfig);
+                    app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+
+                    // Authentication Step (Mandatory Setup rule)
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+
+                    isFirebaseConnected = true;
+                    document.getElementById('sync-label').innerText = "Live Cloud Sync";
+                    document.getElementById('firebase-status').className = "flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-xs text-emerald-300 font-semibold";
+                    
+                    // Listen to incoming Firebase Syncs
+                    setupListeners();
+                } catch (err) {
+                    console.error("Firebase init failed, switching to premium offline simulation memory.", err);
+                    setupOfflineMode();
+                }
+            } else {
+                setupOfflineMode();
+            }
+        };
+
+        const setupOfflineMode = () => {
+            isFirebaseConnected = false;
+            document.getElementById('sync-label').innerText = "Local Database Mode";
+            document.getElementById('firebase-status').className = "flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-full text-xs text-amber-300 font-semibold";
+            
+            // Load from LocalStorage if user previously saved
+            const cached = localStorage.getItem(`proworkspace_cache_${appId}`);
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    LOCAL_DATABASE.users = parsed.users;
+                    LOCAL_DATABASE.tasks = parsed.tasks;
+                } catch(e) {}
+            }
+            renderPortal();
+        };
+
+        // Realtime Firestore Data Tracking
+        const setupListeners = () => {
+            // Setup listener for User Profiles
+            const usersCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
+            onSnapshot(usersCollectionRef, (snapshot) => {
+                snapshot.forEach((doc) => {
+                    LOCAL_DATABASE.users[doc.id] = doc.data();
+                });
+                renderPortal();
+            }, (error) => {
+                console.warn("Firestore Snapshot warning:", error);
+            });
+
+            // Setup listener for Tasks
+            const tasksCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+            onSnapshot(tasksCollectionRef, (snapshot) => {
+                snapshot.forEach((doc) => {
+                    LOCAL_DATABASE.tasks[doc.id] = doc.data();
+                });
+                renderPortal();
+            }, (error) => {
+                console.warn("Firestore Tasks Snapshot warning:", error);
+            });
+        };
+
+        // Helper to Sync changes to cloud/local state
+        const syncState = async (entity, id, payload) => {
+            if (isFirebaseConnected) {
+                try {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', entity, id);
+                    await setDoc(docRef, payload, { merge: true });
+                } catch (e) {
+                    console.warn("Could not sync dynamically to Cloud. Updating locally...", e);
+                }
+            }
+            // Always sync offline memory
+            if (entity === 'users') LOCAL_DATABASE.users[id] = { ...LOCAL_DATABASE.users[id], ...payload };
+            if (entity === 'tasks') LOCAL_DATABASE.tasks[id] = { ...LOCAL_DATABASE.tasks[id], ...payload };
+            
+            localStorage.setItem(`proworkspace_cache_${appId}`, JSON.stringify(LOCAL_DATABASE));
+            renderPortal();
+        };
+
+        // Modern dynamic toast notification system
+        window.showNotification = (msg, type = "success") => {
+            const container = document.getElementById('toast-bin');
+            const toast = document.createElement('div');
+            toast.className = `flex items-center gap-3 px-4 py-3 rounded-xl border shadow-xl transition-all duration-300 transform translate-y-2 opacity-0 ${
+                type === 'success' 
+                ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-300 shadow-emerald-950/30' 
+                : type === 'warning'
+                ? 'bg-amber-950/90 border-amber-500/30 text-amber-300 shadow-amber-950/30'
+                : 'bg-indigo-950/90 border-indigo-500/30 text-indigo-300 shadow-indigo-950/30'
+            }`;
+            
+            const icon = type === 'success' ? 'fa-circle-check' : type === 'warning' ? 'fa-circle-exclamation' : 'fa-circle-info';
+            toast.innerHTML = `
+                <i class="fa-solid ${icon} text-base shrink-0"></i>
+                <span class="text-xs font-bold leading-none">${msg}</span>
+            `;
+            
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        };
+
+        // Switch View Role Portal
+        window.switchPortal = (portal) => {
+            activePortal = portal;
+            
+            // Adjust buttons active styling
+            const btnEmp = document.getElementById('btn-portal-employee');
+            const btnAdmin = document.getElementById('btn-portal-admin');
+
+            if (portal === 'employee') {
+                btnEmp.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-brand-600 text-white";
+                btnAdmin.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-gray-400 hover:text-white";
+            } else {
+                btnAdmin.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-brand-600 text-white";
+                btnEmp.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-gray-400 hover:text-white";
+            }
+
+            renderPortal();
+            window.showNotification(`Switched view to ${portal === 'admin' ? 'Admin Controller' : 'My Secure Desk'}`, 'info');
+        };
+
+        // Gamified Level calculator algorithm
+        const getXPRequirement = (level) => level * 200;
+        
+        const awardPointsAndXP = (empId, pointsAwarded) => {
+            const user = LOCAL_DATABASE.users[empId];
+            if (!user) return;
+            
+            user.points += pointsAwarded;
+            let req = getXPRequirement(user.level);
+            
+            // Check if level up
+            if (user.points >= req) {
+                user.level += 1;
+                user.points = user.points - req; // rollover remaining points to new level pool
+                triggerCustomAchievement(user.name, "Level Up! 🛡️", `Elevated to Rank Level ${user.level}. High productivity pays off!`);
+            }
+            syncState('users', empId, user);
+        };
+
+        // Trigger gorgeous full screen achievement banner modal
+        const triggerCustomAchievement = (userName, title, desc) => {
+            const modal = document.getElementById('achievement-unlocked-modal');
+            document.getElementById('achievement-title').innerText = title;
+            document.getElementById('achievement-desc').innerText = desc;
+            
+            modal.classList.remove('pointer-events-none', 'opacity-0');
+            modal.firstElementChild.classList.remove('scale-75');
+            
+            setTimeout(() => {
+                modal.classList.add('pointer-events-none', 'opacity-0');
+                modal.firstElementChild.classList.add('scale-75');
+            }, 4000);
+        };
+
+        // Custom Confirm dialog helper mimicking standard window alerts inside iframe
+        window.openCustomModal = (title, description, primaryActionText, callback) => {
+            const modal = document.getElementById('custom-modal');
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-desc').innerText = description;
+            
+            const actions = document.getElementById('modal-actions');
+            actions.innerHTML = `
+                <button id="modal-cancel-btn" class="px-4 py-2 text-xs font-bold rounded-lg text-gray-400 hover:bg-gray-800 transition-all">Cancel</button>
+                <button id="modal-confirm-btn" class="px-4 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-500 transition-all">${primaryActionText}</button>
+            `;
+
+            modal.classList.remove('pointer-events-none', 'opacity-0');
+            modal.firstElementChild.classList.remove('scale-90');
+
+            const closeModal = () => {
+                modal.classList.add('pointer-events-none', 'opacity-0');
+                modal.firstElementChild.classList.add('scale-90');
+            };
+
+            document.getElementById('modal-cancel-btn').onclick = () => {
+                closeModal();
+            };
+
+            document.getElementById('modal-confirm-btn').onclick = () => {
+                callback();
+                closeModal();
+            };
+        };
+
+        // --- ATTENDANCE SYSTEM BUSINESS LOGIC ---
+        window.triggerCheckIn = (empId) => {
+            const now = new Date();
+            const checkInFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const payload = {
+                status: "Available",
+                checkInTime: checkInFormatted,
+                checkOutTime: "--",
+                breakMinutes: 0
+            };
+            
+            // Core rewards mechanics: On-time entry bonus!
+            // Checked in before 10:00 AM earns immediate streak points
+            const currentHour = now.getHours();
+            if (currentHour < 10) {
+                const user = LOCAL_DATABASE.users[empId];
+                if (!user.achievements.includes('Early Bird')) {
+                    user.achievements.push('Early Bird');
+                    triggerCustomAchievement(user.name, "🌅 Early Bird Hero", "Initiated attendance clock-in before 10:00 AM sharp.");
+                    awardPointsAndXP(empId, 80);
+                } else {
+                    awardPointsAndXP(empId, 20); // standard daily on-time points
+                    window.showNotification("Daily On-Time Bonus +20 XP!", "success");
+                }
+            }
+
+            syncState('users', empId, payload);
+            window.showNotification(`Attendance Logged: checked-in at ${checkInFormatted}`, 'success');
+        };
+
+        window.triggerCheckOut = (empId) => {
+            window.openCustomModal(
+                "Complete Duty Session?",
+                "Are you sure you want to Check Out and log your attendance logs for the day? Active tasks will remain on your list.",
+                "Yes, Clock Out",
+                () => {
+                    const now = new Date();
+                    const checkOutFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    
+                    const payload = {
+                        status: "Checked Out",
+                        checkOutTime: checkOutFormatted
+                    };
+
+                    // Shut down running timers if any
+                    if (breakTimer) clearInterval(breakTimer);
+
+                    syncState('users', empId, payload);
+                    window.showNotification(`Checked Out at ${checkOutFormatted}. Shift completed!`, 'warning');
+                }
+            );
+        };
+
+        window.triggerBreakSwitch = (empId) => {
+            const user = LOCAL_DATABASE.users[empId];
+            if (!user) return;
+
+            const isCurrentlyOnBreak = user.status === "Break";
+            
+            if (isCurrentlyOnBreak) {
+                // Exit Break mode, return to active work tracking
+                clearInterval(breakTimer);
+                const payload = {
+                    status: "Active Work"
+                };
+                syncState('users', empId, payload);
+                window.showNotification("Break completed! Focus tracking resumed.", "success");
+            } else {
+                // Start Break mode, initiate count-up interval
+                const payload = {
+                    status: "Break"
+                };
+                syncState('users', empId, payload);
+                window.showNotification("On Break mode active! Grab some coffee ☕", "info");
+
+                // Start simulated timer counting active minutes
+                breakTimer = setInterval(() => {
+                    const freshUser = LOCAL_DATABASE.users[empId];
+                    if (freshUser.status === "Break") {
+                        const updatedMinutes = freshUser.breakMinutes + 1;
+                        
+                        // Push break limit alert warnings to users and admin console
+                        if (updatedMinutes > freshUser.breakLimit) {
+                            window.showNotification(`Warning: break limit exceeded (${updatedMinutes}m / limit ${freshUser.breakLimit}m)`, 'warning');
+                        }
+                        syncState('users', empId, { breakMinutes: updatedMinutes });
+                    } else {
+                        clearInterval(breakTimer);
+                    }
+                }, 60000); // 1 minute intervals
+            }
+        };
+
+        // --- TASK MANAGEMENT (KANBAN DESK ACTIONS) ---
+        window.taskModalCreate = () => {
+            const container = document.getElementById('custom-modal');
+            document.getElementById('modal-title').innerText = "Create New Project Task";
+            
+            const actions = document.getElementById('modal-actions');
+            document.getElementById('modal-desc').innerHTML = `
+                <div class="space-y-4 text-left">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase">Client Name</label>
+                        <input id="input-task-client" type="text" class="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-lg text-sm text-gray-200 focus:border-brand-500 outline-none" placeholder="e.g., SIA Jewels">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase">Task Assignment Title</label>
+                        <input id="input-task-title" type="text" class="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-lg text-sm text-gray-200 focus:border-brand-500 outline-none" placeholder="e.g., Facebook Ads Setup">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase">Brief / Notes</label>
+                        <textarea id="input-task-desc" class="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-lg text-sm text-gray-200 focus:border-brand-500 outline-none h-20" placeholder="Describe client deliverables..."></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase">Priority</label>
+                            <select id="input-task-priority" class="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-lg text-sm text-gray-200 focus:border-brand-500 outline-none">
+                                <option value="Low">Low</option>
+                                <option value="Medium" selected>Medium</option>
+                                <option value="High">High</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-400 mb-1.5 uppercase">Points Reward</label>
+                            <input id="input-task-reward" type="number" value="30" class="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-lg text-sm text-gray-200 focus:border-brand-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            actions.innerHTML = `
+                <button id="task-cancel-btn" class="px-4 py-2 text-xs font-bold rounded-lg text-gray-400 hover:bg-gray-800 transition-all">Cancel</button>
+                <button id="task-submit-btn" class="px-4 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-500 transition-all">Create Card</button>
+            `;
+
+            container.classList.remove('pointer-events-none', 'opacity-0');
+            container.firstElementChild.classList.remove('scale-90');
+
+            const closeModal = () => {
+                container.classList.add('pointer-events-none', 'opacity-0');
+                container.firstElementChild.classList.add('scale-90');
+                // Reset standard description layout
+                setTimeout(() => document.getElementById('modal-desc').className = "text-gray-400 text-sm leading-relaxed mb-6", 300);
+            };
+
+            document.getElementById('task-cancel-btn').onclick = closeModal;
+            
+            document.getElementById('task-submit-btn').onclick = () => {
+                const client = document.getElementById('input-task-client').value.trim();
+                const title = document.getElementById('input-task-title').value.trim();
+                const desc = document.getElementById('input-task-desc').value.trim();
+                const priority = document.getElementById('input-task-priority').value;
+                const reward = parseInt(document.getElementById('input-task-reward').value) || 30;
+
+                if (!client || !title) {
+                    window.showNotification("Client and Task Title are required fields!", "warning");
+                    return;
+                }
+
+                const newTaskId = `task_${Date.now()}`;
+                const payload = {
+                    id: newTaskId,
+                    uid: currentUserId,
+                    client: client,
+                    title: title,
+                    desc: desc,
+                    status: "todo",
+                    priority: priority,
+                    pointsReward: reward
+                };
+
+                syncState('tasks', newTaskId, payload);
+                window.showNotification("Card created! Task logged in your attendance backlog.", "success");
+                closeModal();
+            };
+        };
+
+        window.moveTaskStatus = (taskId, targetStatus) => {
+            const task = LOCAL_DATABASE.tasks[taskId];
+            if (!task) return;
+
+            const oldStatus = task.status;
+            task.status = targetStatus;
+
+            // Trigger points distribution on successful task completion
+            if (targetStatus === 'done' && oldStatus !== 'done') {
+                awardPointsAndXP(task.uid, task.pointsReward);
+                window.showNotification(`Task completed! Earned +${task.pointsReward} XP Rewards`, "success");
+                
+                // Track "Task Crusher" badges: check if user completed 3+ tasks
+                const myCompletedTasks = Object.values(LOCAL_DATABASE.tasks).filter(t => t.uid === task.uid && t.status === 'done');
+                const user = LOCAL_DATABASE.users[task.uid];
+                if (myCompletedTasks.length >= 3 && !user.achievements.includes('Task Crusher')) {
+                    user.achievements.push('Task Crusher');
+                    syncState('users', task.uid, user);
+                    triggerCustomAchievement(user.name, "⚡ Task Crusher", "Unlocked by closing 3 active deliverables in a shift session!");
+                    awardPointsAndXP(task.uid, 100);
+                }
+            } else {
+                syncState('tasks', taskId, { status: targetStatus });
+                window.showNotification(`Task card moved to ${targetStatus.toUpperCase()}`, "info");
+            }
+        };
+
+        // --- RENDER ROUTINES ---
+        const renderPortal = () => {
+            const container = document.getElementById('workspace-content');
+            if (activePortal === 'admin') {
+                renderAdminPortal(container);
+            } else {
+                renderEmployeePortal(container);
+            }
+        };
+
+        // 1. ADMIN HUB: LIVE INTERACTIVE master trello representation
+        const renderAdminPortal = (target) => {
+            const users = Object.values(LOCAL_DATABASE.users);
+            
+            // Organize users into visual operational attendance status buckets
+            const columns = {
+                "Checked In / Available": users.filter(u => u.status === 'Available'),
+                "Active Work": users.filter(u => u.status === 'Active Work'),
+                "On Break ☕": users.filter(u => u.status === 'Break'),
+                "Checked Out / Off Shift": users.filter(u => u.status === 'Checked Out' || u.status === 'Offline')
+            };
+
+            target.innerHTML = `
+                <div class="h-full flex flex-col p-6 overflow-hidden">
+                    <!-- Quick Metrics Strip -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="p-4 bg-gray-900 border border-gray-800 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">At Work Station</span>
+                                <span class="block text-2xl font-black text-emerald-400 mt-1">${columns['Checked In / Available'].length + columns['Active Work'].length}</span>
+                            </div>
+                            <div class="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg">
+                                <i class="fa-solid fa-circle-check text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-gray-900 border border-gray-800 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Doing Tasks</span>
+                                <span class="block text-2xl font-black text-brand-400 mt-1">${columns['Active Work'].length}</span>
+                            </div>
+                            <div class="p-2.5 bg-brand-500/10 text-brand-400 rounded-lg">
+                                <i class="fa-solid fa-spinner text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-gray-900 border border-gray-800 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">On Break</span>
+                                <span class="block text-2xl font-black text-amber-400 mt-1">${columns['On Break ☕'].length}</span>
+                            </div>
+                            <div class="p-2.5 bg-amber-500/10 text-amber-400 rounded-lg">
+                                <i class="fa-solid fa-mug-hot text-lg"></i>
+                            </div>
+                        </div>
+                        <div class="p-4 bg-gray-900 border border-gray-800 rounded-xl flex items-center justify-between">
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Signed Off</span>
+                                <span class="block text-2xl font-black text-gray-300 mt-1">${columns['Checked Out / Off Shift'].length}</span>
+                            </div>
+                            <div class="p-2.5 bg-gray-800 text-gray-400 rounded-lg">
+                                <i class="fa-solid fa-door-closed text-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trello Board Frame -->
+                    <div class="flex-1 flex gap-6 overflow-x-auto overflow-y-hidden pb-4 trello-scroll items-start">
+                        ${Object.keys(columns).map(colKey => {
+                            const employeeGroup = columns[colKey];
+                            
+                            // Color scheme mapping per status group
+                            const dotColor = colKey.includes('Available') ? 'bg-emerald-500 text-emerald-400' 
+                                            : colKey.includes('Active') ? 'bg-brand-500 text-brand-400'
+                                            : colKey.includes('Break') ? 'bg-amber-500 text-amber-400'
+                                            : 'bg-gray-600 text-gray-400';
+
+                            return `
+                                <div class="w-80 shrink-0 bg-gray-900 border border-gray-800/80 rounded-2xl flex flex-col max-h-full">
+                                    <!-- Column Header -->
+                                    <div class="p-4 flex items-center justify-between border-b border-gray-800">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-2.5 h-2.5 rounded-full ${dotColor.split(' ')[0]}"></span>
+                                            <h4 class="font-extrabold text-xs text-gray-200 uppercase tracking-wide">${colKey}</h4>
+                                        </div>
+                                        <span class="px-2 py-0.5 bg-gray-950 rounded text-[10px] font-black text-gray-400">${employeeGroup.length}</span>
+                                    </div>
+                                    <!-- Kanban Employee list -->
+                                    <div class="p-3 space-y-4 overflow-y-auto trello-scroll flex-1">
+                                        ${employeeGroup.length === 0 ? `
+                                            <div class="py-12 border border-dashed border-gray-800/60 rounded-xl text-center text-[11px] text-gray-500">
+                                                No employees in state
+                                            </div>
+                                        ` : employeeGroup.map(emp => {
+                                            // Get employee active task in progress
+                                            const activeTaskCard = Object.values(LOCAL_DATABASE.tasks).find(t => t.uid === emp.uid && t.status === 'in_progress');
+                                            
+                                            // Check warning alerts if employee exceeds break threshold
+                                            const overLimit = emp.status === 'Break' && emp.breakMinutes > emp.breakLimit;
+
+                                            return `
+                                                <div class="p-4 bg-gray-950 border border-gray-800 rounded-xl hover:border-gray-700 transition-all shadow-md relative group">
+                                                    <!-- Profile Summary -->
+                                                    <div class="flex justify-between items-start mb-3">
+                                                        <div class="flex items-center gap-2.5">
+                                                            <div class="w-8 h-8 rounded-lg bg-brand-600/20 border border-brand-500/20 flex items-center justify-center text-[11px] font-bold text-brand-300">
+                                                                ${emp.avatar}
+                                                            </div>
+                                                            <div>
+                                                                <h5 class="text-xs font-bold text-white">${emp.name}</h5>
+                                                                <p class="text-[10px] text-gray-400">Duty Started: ${emp.checkInTime}</p>
+                                                            </div>
+                                                        </div>
+                                                        <span class="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded text-[10px] font-black flex items-center gap-1">
+                                                            Lvl ${emp.level}
+                                                        </span>
+                                                    </div>
+
+                                                    <!-- Live Duty Work tracking -->
+                                                    <div class="bg-gray-900 border border-gray-800 rounded-lg p-2.5 mb-2">
+                                                        <span class="block text-[9px] font-bold text-gray-500 uppercase">Live Deliverable</span>
+                                                        <span class="block text-[11px] font-semibold text-gray-300 mt-1 truncate">
+                                                            ${activeTaskCard ? `💼 [${activeTaskCard.client}] ${activeTaskCard.title}` : '😴 No Active Tasks Running'}
+                                                        </span>
+                                                    </div>
+
+                                                    <!-- Employee Achievement Badges list -->
+                                                    <div class="flex flex-wrap gap-1">
+                                                        ${emp.achievements.map(badge => `
+                                                            <span class="px-1.5 py-0.5 text-[9px] font-bold rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                                                🏆 ${badge}
+                                                            </span>
+                                                        `).join('')}
+                                                        ${emp.achievements.length === 0 ? `<span class="text-[9px] text-gray-600 italic">No badges earned today</span>` : ''}
+                                                    </div>
+
+                                                    <!-- Alert Trigger for exceeding threshold breaks -->
+                                                    ${overLimit ? `
+                                                        <div class="mt-3 flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[10px] font-bold text-rose-400 animate-pulse">
+                                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                                            Exceeded limit (${emp.breakMinutes}m / ${emp.breakLimit}m max)
+                                                        </div>
+                                                    ` : emp.status === 'Break' ? `
+                                                        <div class="mt-3 flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] font-semibold text-amber-400">
+                                                            <i class="fa-solid fa-mug-hot"></i>
+                                                            On break for ${emp.breakMinutes}m
+                                                        </div>
+                                                    ` : ''}
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        };
+
+        // 2. EMPLOYEE HUB: SECURE, CLOSED VIEW (Contains only self-user tracking database)
+        const renderEmployeePortal = (target) => {
+            const emp = LOCAL_DATABASE.users[currentUserId];
+            if (!emp) {
+                target.innerHTML = `<div class="p-8 text-center text-red-400">Loading Session Profile...</div>`;
+                return;
+            }
+
+            // Secure step: filter tasks ONLY belonging to this specific user ID (Strict Privacy lock)
+            const myTasks = Object.values(LOCAL_DATABASE.tasks).filter(t => t.uid === currentUserId);
+            
+            const columns = {
+                todo: myTasks.filter(t => t.status === 'todo'),
+                in_progress: myTasks.filter(t => t.status === 'in_progress'),
+                done: myTasks.filter(t => t.status === 'done')
+            };
+
+            const levelCap = getXPRequirement(emp.level);
+            const levelPercentage = Math.min((emp.points / levelCap) * 100, 100);
+
+            target.innerHTML = `
+                <div class="h-full flex flex-col lg:flex-row p-6 gap-6 overflow-hidden bg-gray-950">
+                    
+                    <!-- Left Sidebar Profile Panel -->
+                    <div class="w-full lg:w-80 flex flex-col gap-5 shrink-0 overflow-y-auto trello-scroll pr-1">
+                        
+                        <!-- Gamified Stats Panel -->
+                        <div class="p-5 bg-gray-900 border border-gray-800 rounded-2xl relative overflow-hidden">
+                            <!-- Premium Background Orb effects -->
+                            <div class="absolute -right-16 -bottom-16 w-36 h-36 bg-brand-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                            
+                            <div class="flex items-center gap-3">
+                                <div class="w-11 h-11 bg-brand-600 rounded-xl flex items-center justify-center text-white text-sm font-black shadow-lg">
+                                    ${emp.avatar}
+                                </div>
+                                <div>
+                                    <h3 class="text-sm font-bold text-white">${emp.name}</h3>
+                                    <p class="text-[10px] text-brand-400 font-extrabold uppercase tracking-widest">Level ${emp.level} Specialist</p>
+                                </div>
+                            </div>
+
+                            <!-- Level XP Progress Indicator bar -->
+                            <div class="mt-5">
+                                <div class="flex justify-between text-[10px] font-extrabold uppercase mb-1.5 tracking-wider">
+                                    <span class="text-gray-400">XP Progress</span>
+                                    <span class="text-brand-300">${emp.points} / ${levelCap} XP</span>
+                                </div>
+                                <div class="w-full h-2.5 bg-gray-950 border border-gray-800 rounded-full overflow-hidden p-0.5">
+                                    <div class="h-full bg-gradient-to-r from-brand-600 to-indigo-500 rounded-full transition-all duration-500" style="width: ${levelPercentage}%"></div>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 mt-5 pt-4 border-t border-gray-800/80">
+                                <div class="p-2.5 bg-gray-950 rounded-xl text-center border border-gray-800/50">
+                                    <span class="block text-[9px] uppercase font-bold text-gray-500 tracking-wider">Tasks Done</span>
+                                    <span class="block text-base font-black text-white mt-1">${columns.done.length}</span>
+                                </div>
+                                <div class="p-2.5 bg-gray-950 rounded-xl text-center border border-gray-800/50">
+                                    <span class="block text-[9px] uppercase font-bold text-gray-500 tracking-wider">Achievements</span>
+                                    <span class="block text-base font-black text-amber-400 mt-1">${emp.achievements.length}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Shifts and Clock control units -->
+                        <div class="p-5 bg-gray-900 border border-gray-800 rounded-2xl">
+                            <h4 class="font-extrabold text-xs text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-clock-rotate-left text-gray-500"></i> Duty Panel
+                            </h4>
+
+                            <!-- Play/Pause state tracking buttons -->
+                            <div class="space-y-3">
+                                ${emp.status === 'Offline' || emp.status === 'Checked Out' ? `
+                                    <button onclick="triggerCheckIn('${emp.uid}')" class="w-full py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-500/20 active:scale-95">
+                                        <i class="fa-solid fa-right-to-bracket text-sm"></i> Clock-In / Available
+                                    </button>
+                                ` : `
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <button onclick="triggerBreakSwitch('${emp.uid}')" class="py-3 px-2 ${emp.status === 'Break' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-amber-600 hover:bg-amber-500'} text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95">
+                                            <i class="fa-solid ${emp.status === 'Break' ? 'fa-hourglass-half' : 'fa-mug-hot'} text-sm"></i>
+                                            ${emp.status === 'Break' ? 'Stop Break' : 'Take Break'}
+                                        </button>
+                                        <button onclick="triggerCheckOut('${emp.uid}')" class="py-3 px-2 bg-gray-800 hover:bg-gray-700 text-rose-400 font-bold border border-gray-700 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95">
+                                            <i class="fa-solid fa-power-off text-sm"></i> Clock-Out
+                                        </button>
+                                    </div>
+                                `}
+                            </div>
+
+                            <!-- Real-time shift parameters -->
+                            <div class="mt-4 pt-4 border-t border-gray-800 text-xs space-y-2.5 text-gray-400">
+                                <div class="flex justify-between items-center">
+                                    <span class="flex items-center gap-1.5"><i class="fa-regular fa-sun"></i> Shift Started:</span>
+                                    <span class="font-bold text-gray-200">${emp.checkInTime}</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="flex items-center gap-1.5"><i class="fa-regular fa-moon"></i> Shift Completed:</span>
+                                    <span class="font-bold text-gray-200">${emp.checkOutTime}</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="flex items-center gap-1.5"><i class="fa-solid fa-mug-hot text-[11px]"></i> Spent Break:</span>
+                                    <span class="font-extrabold text-amber-400">${emp.breakMinutes} Min</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Locked/Earned Badge Gallery -->
+                        <div class="p-5 bg-gray-900 border border-gray-800 rounded-2xl">
+                            <h4 class="font-extrabold text-xs text-gray-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-shield-halved text-brand-400"></i> My Badges
+                            </h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <!-- Early Bird Trophy Card -->
+                                <div class="p-3 bg-gray-950 border rounded-xl text-center flex flex-col items-center justify-center transition-all ${emp.achievements.includes('Early Bird') ? 'border-amber-500/40 bg-amber-500/5 text-amber-300' : 'border-gray-800 opacity-40 text-gray-500'}">
+                                    <span class="text-2xl mb-1.5">🌅</span>
+                                    <span class="block text-[10px] font-black uppercase tracking-wider">Early Bird</span>
+                                    <span class="block text-[8px] text-gray-500 mt-0.5">Shift before 10 AM</span>
+                                </div>
+                                <!-- Task Crusher Trophy Card -->
+                                <div class="p-3 bg-gray-950 border rounded-xl text-center flex flex-col items-center justify-center transition-all ${emp.achievements.includes('Task Crusher') ? 'border-amber-500/40 bg-amber-500/5 text-amber-300' : 'border-gray-800 opacity-40 text-gray-500'}">
+                                    <span class="text-2xl mb-1.5">⚡</span>
+                                    <span class="block text-[10px] font-black uppercase tracking-wider">Task Crusher</span>
+                                    <span class="block text-[8px] text-gray-500 mt-0.5">Finish 3 shift tasks</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Right Kanban Desk Panels -->
+                    <div class="flex-1 flex flex-col min-h-0">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                            <div>
+                                <h2 class="text-lg font-black text-white">Project Work Trello Desk</h2>
+                                <p class="text-xs text-gray-400">Track and update deliverables for SIA Jewels & health clients securely.</p>
+                            </div>
+                            <button onclick="taskModalCreate()" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 transition-all rounded-xl text-xs font-bold text-white shadow-lg shadow-brand-500/25 flex items-center gap-1.5 self-start">
+                                <i class="fa-solid fa-plus"></i> Create Task
+                            </button>
+                        </div>
+
+                        <!-- 3 Trello Columns Frame (Private to Employee) -->
+                        <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-5 min-h-0 overflow-y-auto md:overflow-y-hidden">
+                            
+                            <!-- To Do Column -->
+                            <div class="bg-gray-900 border border-gray-800 rounded-2xl flex flex-col max-h-full">
+                                <div class="p-4 border-b border-gray-800/80 flex justify-between items-center">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                                        <h4 class="font-extrabold text-xs text-gray-300 uppercase tracking-wider">Attendance Backlog</h4>
+                                    </div>
+                                    <span class="px-2 py-0.5 bg-gray-950 rounded text-[9px] font-bold text-gray-400">${columns.todo.length}</span>
+                                </div>
+                                <div class="p-3 space-y-3 overflow-y-auto trello-scroll flex-1">
+                                    ${columns.todo.length === 0 ? `
+                                        <div class="py-12 border border-dashed border-gray-800/50 rounded-xl text-center text-[11px] text-gray-500">
+                                            No pending deliverables
+                                        </div>
+                                    ` : columns.todo.map(t => renderPrivateTaskCard(t)).join('')}
+                                </div>
+                            </div>
+
+                            <!-- In Progress Column -->
+                            <div class="bg-gray-900 border border-gray-800 rounded-2xl flex flex-col max-h-full">
+                                <div class="p-4 border-b border-gray-800/80 flex justify-between items-center">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+                                        <h4 class="font-extrabold text-xs text-gray-300 uppercase tracking-wider">Doing Tasks</h4>
+                                    </div>
+                                    <span class="px-2 py-0.5 bg-gray-950 rounded text-[9px] font-bold text-gray-400">${columns.in_progress.length}</span>
+                                </div>
+                                <div class="p-3 space-y-3 overflow-y-auto trello-scroll flex-1">
+                                    ${columns.in_progress.length === 0 ? `
+                                        <div class="py-12 border border-dashed border-gray-800/50 rounded-xl text-center text-[11px] text-gray-500">
+                                            No active assignments running
+                                        </div>
+                                    ` : columns.in_progress.map(t => renderPrivateTaskCard(t)).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Done Column -->
+                            <div class="bg-gray-900 border border-gray-800 rounded-2xl flex flex-col max-h-full">
+                                <div class="p-4 border-b border-gray-800/80 flex justify-between items-center">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                        <h4 class="font-extrabold text-xs text-gray-300 uppercase tracking-wider">Done Bucket</h4>
+                                    </div>
+                                    <span class="px-2 py-0.5 bg-gray-950 rounded text-[9px] font-bold text-gray-400">${columns.done.length}</span>
+                                </div>
+                                <div class="p-3 space-y-3 overflow-y-auto trello-scroll flex-1">
+                                    ${columns.done.length === 0 ? `
+                                        <div class="py-12 border border-dashed border-gray-800/50 rounded-xl text-center text-[11px] text-gray-500">
+                                            No completed rewards yet
+                                        </div>
+                                    ` : columns.done.map(t => renderPrivateTaskCard(t)).join('')}
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                </div>
+            `;
+        };
+
+        // Render Private task element card with priority styling and action controllers
+        const renderPrivateTaskCard = (task) => {
+            const priorityClass = task.priority === 'High' ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                : task.priority === 'Medium' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                : 'bg-blue-500/10 border-blue-500/20 text-blue-400';
+
+            return `
+                <div class="p-4 bg-gray-950 border border-gray-800/80 rounded-xl hover:border-gray-700 transition-all shadow-sm">
+                    <div class="flex justify-between items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 rounded text-[9px] font-black border uppercase tracking-wider ${priorityClass}">
+                            ${task.priority}
+                        </span>
+                        <span class="text-[9px] text-gray-500 font-bold uppercase tracking-wider truncate">
+                            📁 Client: ${task.client}
+                        </span>
+                    </div>
+                    <h5 class="text-xs font-bold text-white mb-1 leading-snug">${task.title}</h5>
+                    <p class="text-[11px] text-gray-400 leading-relaxed mb-3">${task.desc || 'No detailed note specified.'}</p>
+                    
+                    <div class="flex justify-between items-center pt-3 border-t border-gray-900">
+                        <span class="text-[10px] font-bold text-amber-400/90 flex items-center gap-1">
+                            <i class="fa-solid fa-bolt text-[9px]"></i> +${task.pointsReward} XP
+                        </span>
+                        
+                        <!-- Navigation Arrows mimicking Trello move paths -->
+                        <div class="flex items-center gap-1.5">
+                            ${task.status !== 'todo' ? `
+                                <button onclick="moveTaskStatus('${task.id}', '${task.status === 'done' ? 'in_progress' : 'todo'}')" class="p-1.5 bg-gray-900 border border-gray-800 rounded-lg hover:border-gray-700 text-gray-400 hover:text-white transition-all text-[10px]">
+                                    <i class="fa-solid fa-arrow-left"></i>
+                                </button>
+                            ` : ''}
+                            ${task.status !== 'done' ? `
+                                <button onclick="moveTaskStatus('${task.id}', '${task.status === 'todo' ? 'in_progress' : 'done'}')" class="p-1.5 bg-brand-600/30 border border-brand-500/20 rounded-lg hover:bg-brand-500 text-brand-300 transition-all text-[10px] font-black flex items-center gap-1">
+                                    Next <i class="fa-solid fa-arrow-right"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        // Initialize App
+        initFirebase();
+
+    </script>
+</body>
+</html>
