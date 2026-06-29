@@ -1,1 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Workspace - SBX Portal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h2 id="welcomeText">Welcome, Employee</h2>
+            <p id="liveClock" style="font-size:0.9rem; color:#666;"></p>
+        </div>
+        <button id="logoutBtn" style="width:auto;">Logout</button>
+    </div>
 
+    <div class="card">
+        <h3>Shift Tracking</h3>
+        <div class="attendance-actions" style="margin-top:15px;">
+            <button id="btnCheckIn" class="btn-success">Check In</button>
+            <button id="btnBreakStart" class="btn-warning">Take Break</button>
+            <button id="btnBreakEnd" class="btn-success" style="display:none;">Resume Work</button>
+            <button id="btnCheckOut" class="btn-danger">Office Out</button>
+        </div>
+        <p id="attendanceStatusText" style="margin-top:10px; font-weight:bold; color:#4a5568;"></p>
+    </div>
+
+    <h2>My Tasks (Trello Board)</h2>
+    <div class="kanban-board">
+        <div class="kanban-column">
+            <h3>📋 To Do</h3>
+            <div id="todo-tasks"></div>
+        </div>
+        <div class="kanban-column">
+            <h3>⚙️ In Progress</h3>
+            <div id="progress-tasks"></div>
+        </div>
+        <div class="kanban-column">
+            <h3>✅ Done</h3>
+            <div id="done-tasks"></div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+    <script type="module">
+        import { logoutUser, setupEmployeeAttendanceUI, setupEmployeeTasksUI } from './app.js';
+        
+        document.getElementById('logoutBtn').addEventListener('click', logoutUser);
+        
+        // Live UI rendering operations bootstrap
+        setupEmployeeAttendanceUI();
+        setupEmployeeTasksUI();
+
+        // System Clock Tick
+        setInterval(() => {
+            document.getElementById('liveClock').innerText = `Current Time: ${new Date().toLocaleTimeString()}`;
+        }, 1000);
+    </script>
+</body>
+</html>
