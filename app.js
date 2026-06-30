@@ -113,19 +113,52 @@ function tasksView(){
   $('#filterBusiness').value=taskFilters.business; $('#filterStatus').value=taskFilters.status; $('#filterSearch').value=taskFilters.search;
   $('#taskForm').onsubmit=async ev=>{ev.preventDefault(); const data=Object.fromEntries(new FormData(ev.target)); if(!data.taskCode) data.taskCode=makeTaskCode(data.business,data.department); data.status='todo'; data.createdAt=serverTimestamp(); data.createdDate=today(); data.updatedAt=serverTimestamp(); await addDoc(collection(db,'tasks'),data); await logActivity(data.empId,`New task assigned: ${data.taskCode}`,'task'); toast('Task created'); await refresh();};
   $('#filterBusiness').onchange=e=>{taskFilters.business=e.target.value;tasksView()}; $('#filterStatus').onchange=e=>{taskFilters.status=e.target.value;tasksView()}; $('#filterEmp').onchange=e=>{taskFilters.employee=e.target.value;tasksView()}; $('#filterSearch').oninput=e=>{taskFilters.search=e.target.value;tasksView()}; $('#clearFilters').onclick=()=>{taskFilters={business:'All',status:'All',employee:'All',search:''};tasksView()};
+  initKanbanDnd();
 }
 function makeTaskCode(b,d){ const n=String(state.tasks.length+1).padStart(4,'0'); return `${busShort(b)}-${depShort(d)}-${n}`; }
 function filteredTasks(){
   return state.tasks.filter(t=> (taskFilters.business==='All'||t.business===taskFilters.business) && (taskFilters.status==='All'||t.status===taskFilters.status) && (taskFilters.employee==='All'||t.empId===taskFilters.employee) && (!taskFilters.search || String(t.title+t.taskCode+t.description).toLowerCase().includes(taskFilters.search.toLowerCase())) );
 }
-function kanbanBoard(tasks, admin=false){ const cols=['todo','progress','review','complete']; return `<div class="kanban">${cols.map(s=>`<div class="kanban-col"><div class="kanban-head"><h3>${statusLabel(s)}</h3><span class="count">${tasks.filter(t=>t.status===s).length}</span></div>${tasks.filter(t=>t.status===s).sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999')).map(t=>taskCard(t,admin)).join('') || '<div class="empty">No tasks</div>'}</div>`).join('')}</div>`; }
+function kanbanBoard(tasks, admin=false){
+  const cols = admin ? ['todo','progress','review','complete'] : ['todo','progress','review'];
+  return `<div class="kanban" data-admin="${admin?'1':'0'}">${cols.map(s=>`<div class="kanban-col" data-status="${s}"><div class="kanban-head"><h3>${statusLabel(s)}</h3><span class="count">${tasks.filter(t=>t.status===s).length}</span></div><div class="drop-zone" data-status="${s}">${tasks.filter(t=>t.status===s).sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999')).map(t=>taskCard(t,admin)).join('') || '<div class="empty">No tasks</div>'}</div></div>`).join('')}</div><p class="drag-hint">Drag task cards between columns. Employee can send only up to Review. Final Complete is admin only.</p>`;
+}
 function taskCard(t,admin=false){
   const canEmpMove = state.role==='employee' && t.status!=='complete';
-  return `<div class="task-card"><div class="task-meta"><span class="mini">${esc(t.taskCode||'NO-CODE')}</span><span class="status ${priorityClass(t.priority)}">${esc(t.priority||'Medium')}</span><span class="mini">${esc(t.business||'-')}</span></div><h4>${esc(t.title)}</h4><p class="task-desc">${esc(t.description||'No description')}</p><div class="task-meta"><span class="mini">👤 ${esc(empName(t.empId))}</span><span class="mini">🏢 ${esc(t.department||'-')}</span><span class="mini">📅 ${dateNice(t.dueDate)} ${daysLeft(t.dueDate)?'• '+daysLeft(t.dueDate):''}</span><span class="mini">⏱ ${esc(t.estimatedHours||'-')}h</span></div><div class="task-actions">${adminActions(t,admin)}${employeeActions(t,canEmpMove)}</div></div>`;
+  const lock = state.role==='employee' && t.status==='complete';
+  return `<div class="task-card" draggable="${lock?'false':'true'}" data-task-id="${t.id}" data-current-status="${t.status||'todo'}"><div class="task-meta"><span class="mini">${esc(t.taskCode||'NO-CODE')}</span><span class="status ${priorityClass(t.priority)}">${esc(t.priority||'Medium')}</span><span class="mini">${esc(t.business||'-')}</span></div><h4>${esc(t.title)}</h4><p class="task-desc">${esc(t.description||'No description')}</p><div class="task-meta"><span class="mini">👤 ${esc(empName(t.empId))}</span><span class="mini">🏢 ${esc(t.department||'-')}</span><span class="mini">📅 ${dateNice(t.dueDate)} ${daysLeft(t.dueDate)?'• '+daysLeft(t.dueDate):''}</span><span class="mini">⏱ ${esc(t.estimatedHours||'-')}h</span></div><div class="task-actions">${adminActions(t,admin)}${employeeActions(t,canEmpMove)}</div></div>`;
 }
-function adminActions(t,admin){ if(!admin)return ''; let html=`<button class="ghost-btn" onclick="window.editTask('${t.id}')">Edit</button><button class="danger-btn" onclick="window.deleteTask('${t.id}')">Delete</button>`; if(t.status==='review') html+=`<button class="primary-btn" onclick="window.moveTask('${t.id}','complete')">Final Complete</button>`; if(t.status!=='todo') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','todo')">Back To Do</button>`; return html; }
+function adminActions(t,admin){ if(!admin)return ''; let html=`<button class="ghost-btn" onclick="window.editTask('${t.id}')">Edit</button><button class="danger-btn" onclick="window.deleteTask('${t.id}')">Delete</button>`; if(t.status==='review') html+=`<button class="primary-btn" onclick="window.moveTask('${t.id}','complete')">Final Complete</button>`; if(t.status==='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','review')">Reopen Review</button>`; if(t.status!=='todo' && t.status!=='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','todo')">Back To Do</button>`; return html; }
 function employeeActions(t,can){ if(!can)return ''; if(t.status==='todo') return `<button class="primary-btn" onclick="window.moveTask('${t.id}','progress')">Start</button>`; if(t.status==='progress') return `<button class="primary-btn" onclick="window.moveTask('${t.id}','review')">Send Review</button><button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Add Note</button>`; if(t.status==='review') return `<button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Add Note</button>`; return ''; }
-window.moveTask=async (id,status)=>{ const t=state.tasks.find(x=>x.id===id); if(state.role==='employee' && status==='complete') return toast('Only admin can final complete'); await updateDoc(doc(db,'tasks',id),{status,updatedAt:serverTimestamp(),lastUpdatedBy:state.role}); await logActivity(t.empId,`Task ${t.taskCode} moved to ${statusLabel(status)}`,'task'); toast('Task updated'); await refresh(); };
+function canMoveTask(t, status){
+  if(!t) return {ok:false,msg:'Task not found'};
+  if(state.role==='employee'){
+    if(t.empId !== state.employee?.empId) return {ok:false,msg:'This task is not assigned to you'};
+    if(status==='complete') return {ok:false,msg:'Final Complete only admin karega'};
+    if(t.status==='complete') return {ok:false,msg:'Completed task locked hai'};
+  }
+  if(state.role==='admin' && status==='complete' && t.status!=='review') return {ok:false,msg:'Complete karne se pehle task Review me hona chahiye'};
+  return {ok:true};
+}
+window.moveTask=async (id,status)=>{
+  const t=state.tasks.find(x=>x.id===id); const check=canMoveTask(t,status); if(!check.ok) return toast(check.msg);
+  const extra={status,updatedAt:serverTimestamp(),lastUpdatedBy:state.role};
+  if(status==='progress' && !t.startedAt) extra.startedAt=serverTimestamp();
+  if(status==='review') extra.reviewAt=serverTimestamp();
+  if(status==='complete') { extra.completedAt=serverTimestamp(); extra.completedBy='admin'; }
+  await updateDoc(doc(db,'tasks',id),extra); await logActivity(t.empId,`Task ${t.taskCode} moved to ${statusLabel(status)}`,'task'); toast(status==='complete'?'Task final completed':'Task updated'); await refresh();
+};
+function initKanbanDnd(){
+  $$('.task-card[draggable="true"]').forEach(card=>{
+    card.ondragstart=e=>{ e.dataTransfer.setData('text/plain', card.dataset.taskId); setTimeout(()=>card.classList.add('dragging'),0); };
+    card.ondragend=()=>card.classList.remove('dragging');
+  });
+  $$('.drop-zone').forEach(zone=>{
+    zone.ondragover=e=>{ e.preventDefault(); zone.classList.add('drag-over'); };
+    zone.ondragleave=()=>zone.classList.remove('drag-over');
+    zone.ondrop=async e=>{ e.preventDefault(); zone.classList.remove('drag-over'); const id=e.dataTransfer.getData('text/plain'); const status=zone.dataset.status; const t=state.tasks.find(x=>x.id===id); if(!t || t.status===status) return; await window.moveTask(id,status); };
+  });
+}
 window.addTaskNote=async id=>{ const t=state.tasks.find(x=>x.id===id); const note=prompt('Write update note'); if(!note)return; const notes=[...(t.notes||[]),{by:state.employee?.name||'Admin',note,time:nowTime(),date:today()}]; await updateDoc(doc(db,'tasks',id),{notes,updatedAt:serverTimestamp()}); await logActivity(t.empId,`Task note added: ${t.taskCode}`,'task'); toast('Note added'); await refresh(); };
 window.editTask=async id=>{ const t=state.tasks.find(x=>x.id===id); const title=prompt('Task title',t.title||''); if(!title)return; const priority=prompt('Priority Low/Medium/High/Urgent',t.priority||'Medium'); const dueDate=prompt('Due date YYYY-MM-DD',t.dueDate||''); const description=prompt('Description',t.description||''); await updateDoc(doc(db,'tasks',id),{title,priority,dueDate,description,updatedAt:serverTimestamp()}); await logActivity(t.empId,`Task edited: ${t.taskCode}`,'task'); toast('Task edited'); await refresh(); };
 window.deleteTask=async id=>{ const t=state.tasks.find(x=>x.id===id); if(confirm('Delete task?')){await deleteDoc(doc(db,'tasks',id)); await logActivity(t.empId,`Task deleted: ${t.taskCode}`,'task'); toast('Task deleted'); await refresh();} };
@@ -149,6 +182,7 @@ function employeeTasksView(){
   $('#employeeTasksView').innerHTML = `<div class="card"><h3>My Trello Style Task Board</h3><div class="filter-row"><select id="empFilterBusiness"><option>All</option><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select id="empFilterStatus"><option>All</option><option value="todo">To Do</option><option value="progress">In Progress</option><option value="review">Review</option><option value="complete">Completed</option></select><input id="empFilterSearch" placeholder="Search my task"><button id="empClearFilters" class="ghost-btn">Clear</button></div>${kanbanBoard(tasks,false)}</div>`;
   $('#empFilterBusiness').value=empTaskFilters.business; $('#empFilterStatus').value=empTaskFilters.status; $('#empFilterSearch').value=empTaskFilters.search;
   $('#empFilterBusiness').onchange=e=>{empTaskFilters.business=e.target.value;employeeTasksView()}; $('#empFilterStatus').onchange=e=>{empTaskFilters.status=e.target.value;employeeTasksView()}; $('#empFilterSearch').oninput=e=>{empTaskFilters.search=e.target.value;employeeTasksView()}; $('#empClearFilters').onclick=()=>{empTaskFilters={business:'All',status:'All',search:''};employeeTasksView()};
+  initKanbanDnd();
 }
 function employeeSummaryView(){ const my=state.employee.empId; const rows=state.attendance.filter(a=>a.empId===my); const tasks=state.tasks.filter(t=>t.empId===my); $('#employeeSummaryView').innerHTML = `<div class="grid cards"><div class="card stat"><p>Total Days</p><h3>${rows.length}</h3></div><div class="card stat"><p>Completed Tasks</p><h3>${tasks.filter(t=>t.status==='complete').length}</h3></div><div class="card stat"><p>Pending</p><h3>${tasks.filter(t=>t.status!=='complete').length}</h3></div><div class="card stat"><p>Late Count</p><h3>${rows.filter(isLate).length}</h3></div></div><div class="card"><h3>Monthly Graph</h3><div class="chart">${rows.slice(-20).map(r=>`<div class="bar" style="height:${r.exit?120:60}px" title="${r.date}"></div>`).join('')}</div></div>`; }
 function employeeMessageView(){ $('#employeeMessageView').innerHTML = `<div class="card"><h3>Message Admin / Leave Request</h3><form id="msgForm" class="form-grid"><select name="type"><option value="message">Message</option><option value="leave">Leave Request</option></select><input name="subject" placeholder="Subject"><textarea name="text" placeholder="Write message / leave reason" required></textarea><button class="primary-btn">Send</button></form></div>`; $('#msgForm').onsubmit=async ev=>{ev.preventDefault(); const d=Object.fromEntries(new FormData(ev.target)); await logActivity(state.employee.empId,`${d.subject?d.subject+': ':''}${d.text}`,d.type); toast('Sent to admin'); ev.target.reset();}; }
