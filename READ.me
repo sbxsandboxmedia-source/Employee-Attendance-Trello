@@ -1,31 +1,21 @@
-# Office Attendance System — Version 3
+# Office Attendance System — V3.1 Real Task Management
 
-Firebase based Office Attendance + Work Tracking System.
+## Upload to GitHub Pages
+Replace these files in your repository:
+- index.html
+- style.css
+- app.js
 
-## Admin Login
-Email: `admin@office.com`  
-Password: `admin123`
+## Login
+Admin:
+- Email: admin@office.com
+- Password: admin123
 
-## V3 Focus: Task Management
-- Task create with Task Title
-- Auto/manual Task Code
-- Business: SBX Media, SIA Jewels, YOLOX Fashion, Personal
-- Department dropdown
-- Assign Employee
-- Priority: Low, Medium, High, Urgent
-- Due Date
-- Estimated Hours
-- Description
-- Admin Kanban board: To Do, In Progress, Review, Completed
-- Employee Kanban board: only assigned tasks
-- Employee can move: To Do → In Progress → Review
-- Only Admin can move Review → Completed
-- Task edit/delete by Admin
-- Task filters by business, status, employee, search
-- Activity timeline logs task changes
+Employee:
+- Use the Employee ID and Password created from Admin > Employees.
 
 ## Firebase
-Use Firestore test mode during development:
+Firestore test rule for development:
 
 ```js
 rules_version = '2';
@@ -38,8 +28,16 @@ service cloud.firestore {
 }
 ```
 
-Upload these files to GitHub Pages:
-- index.html
-- style.css
-- app.js
-- README.md
+## V3.1 Features
+- Task Create / Edit / Delete
+- Auto task code like SBX-SMM-0001
+- Business dropdown: SBX Media, SIA Jewels, YOLOX Fashion, Personal
+- Department dropdown from Firebase
+- Assign task to employee
+- Priority, due date, estimated hours, description
+- Admin Kanban: To Do, In Progress, Review, Completed
+- Employee Kanban: To Do, In Progress, Review
+- Final Complete only by admin
+- Task filters: business, employee, status, search
+- Task activity timeline
+- Employee task notes
