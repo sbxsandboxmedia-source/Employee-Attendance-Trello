@@ -1,14 +1,28 @@
-Office Attendance System
-Firebase based attendance and work tracking dashboard.
-Files
-index.html
-style.css
-app.js
-Default Admin Login
-Email: admin@office.com
-Password: admin123
-Firebase Setup
-In Firestore Database, start in test mode for development.
-Recommended collections are created automatically when you add data.
-Deploy on GitHub Pages
-Upload these files to your repository root and enable GitHub Pages from Settings > Pages.
+# Office Attendance System
+
+Admin login:
+- Email: admin@office.com
+- Password: admin123
+
+Important Firebase setup:
+1. Firebase Console > Firestore Database > Create Database.
+2. Start in test mode for development.
+3. If Rules tab is closed, use this temporary rule while testing:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+
+Upload files to GitHub Pages root:
+- index.html
+- style.css
+- app.js
+
+Note: This is a front-end Firebase version. Production ke liye secure Firebase Authentication + strict rules add karna zaroori hai.
