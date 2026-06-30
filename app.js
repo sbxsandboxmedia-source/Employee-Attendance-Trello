@@ -1,384 +1,447 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+/* Office Attendance System - full app.js
+   Works with GitHub Pages + Firebase Firestore. No Firebase Storage required.
+   Replace only app.js if index.html already loads this file as type="module".
+*/
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  doc,
+  addDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  getDocs,
+  query,
+  orderBy,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyC5tFS7Pw4pGoFy7Shl5DShHCanWns9Y4o',
-  authDomain: 'office-attendance-system-b7961.firebaseapp.com',
-  projectId: 'office-attendance-system-b7961',
-  storageBucket: 'office-attendance-system-b7961.firebasestorage.app',
-  messagingSenderId: '740619580980',
-  appId: '1:740619580980:web:f1099f8a0fef03efd83c61',
-  measurementId: 'G-CKTB4S6883'
+  apiKey: "AIzaSyC5tFS7Pw4pGoFy7Shl5DShHCanWns9Y4o",
+  authDomain: "office-attendance-system-b7961.firebaseapp.com",
+  projectId: "office-attendance-system-b7961",
+  storageBucket: "office-attendance-system-b7961.firebasestorage.app",
+  messagingSenderId: "740619580980",
+  appId: "1:740619580980:web:f1099f8a0fef03efd83c61",
+  measurementId: "G-CKTB4S6883"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const $ = s => document.querySelector(s);
-const $$ = s => [...document.querySelectorAll(s)];
-const today = () => new Date().toISOString().slice(0,10);
-const monthKey = (d=today()) => String(d).slice(0,7);
-const currentMonth = () => monthKey(today());
-const isSundayDate = d => new Date(d+'T00:00:00').getDay()===0;
-const nowTime = () => new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-let state = { role:null, employee:null, employees:[], departments:[], tasks:[], attendance:[], activity:[], leaveRequests:[], settings:{} };
-let taskFilters = { business:'All', status:'All', employee:'All', search:'' };
-let empTaskFilters = { business:'All', status:'All', search:'' };
 
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+const ADMIN_EMAIL = "admin@office.com";
+const ADMIN_PASSWORD = "admin123";
 
-function closeProfessionalModal(){ const m=document.querySelector('.professional-modal-backdrop'); if(m) m.remove(); }
-function modalShell(title, inner, footer=''){
-  closeProfessionalModal();
-  const modal=document.createElement('div');
-  modal.className='professional-modal-backdrop';
-  modal.innerHTML=`<div class="professional-modal-card"><button class="professional-modal-x" type="button" aria-label="Close">×</button><div class="professional-modal-head"><span class="modal-icon">✦</span><div><h2>${esc(title)}</h2><p>Update details carefully and save changes.</p></div></div>${inner}${footer}</div>`;
-  document.body.appendChild(modal);
-  modal.querySelector('.professional-modal-x').onclick=()=>modal.remove();
-  modal.onclick=e=>{ if(e.target===modal) modal.remove(); };
-  return modal;
-}
-function modalConfirm({title='Confirm Action', message='Are you sure?', confirmText='Confirm', danger=false}={}){
-  return new Promise(resolve=>{
-    const modal=modalShell(title, `<p class="modal-message">${esc(message)}</p>`, `<div class="professional-modal-footer"><button class="ghost-btn modal-cancel" type="button">Cancel</button><button class="${danger?'danger-btn':'primary-btn'} modal-confirm" type="button">${esc(confirmText)}</button></div>`);
-    modal.querySelector('.modal-cancel').onclick=()=>{modal.remove(); resolve(false)};
-    modal.querySelector('.modal-confirm').onclick=()=>{modal.remove(); resolve(true)};
-  });
-}
-function fieldHTML(f){
-  const val = f.value == null ? '' : String(f.value);
-  const req = f.required ? 'required' : '';
-  const label = `<label>${esc(f.label||f.name)}</label>`;
-  if(f.type==='select') return `<div class="modal-field">${label}<select name="${esc(f.name)}" ${req}>${(f.options||[]).map(o=>{const v=typeof o==='object'?o.value:o; const text=typeof o==='object'?o.label:o; return `<option value="${esc(v)}" ${String(v)===val?'selected':''}>${esc(text)}</option>`}).join('')}</select></div>`;
-  if(f.type==='textarea') return `<div class="modal-field full">${label}<textarea name="${esc(f.name)}" rows="4" ${req} placeholder="${esc(f.placeholder||'')}">${esc(val)}</textarea></div>`;
-  return `<div class="modal-field">${label}<input name="${esc(f.name)}" type="${esc(f.type||'text')}" value="${esc(val)}" ${req} placeholder="${esc(f.placeholder||'')}"></div>`;
-}
-function modalForm({title='Edit', fields=[], submitText='Save Changes'}={}){
-  return new Promise(resolve=>{
-    const body=`<form class="professional-form" id="professionalModalForm"><div class="professional-form-grid">${fields.map(fieldHTML).join('')}</div><div class="professional-modal-footer"><button class="ghost-btn modal-cancel" type="button">Cancel</button><button class="primary-btn" type="submit">${esc(submitText)}</button></div></form>`;
-    const modal=modalShell(title, body);
-    modal.querySelector('.modal-cancel').onclick=()=>{modal.remove(); resolve(null)};
-    modal.querySelector('form').onsubmit=e=>{ e.preventDefault(); const data=Object.fromEntries(new FormData(e.target)); modal.remove(); resolve(data); };
-    setTimeout(()=>modal.querySelector('input,select,textarea')?.focus(),50);
-  });
-}
+const state = {
+  role: localStorage.getItem("oas_role") || null,
+  userId: localStorage.getItem("oas_userId") || null,
+  activeView: "dashboard",
+  employees: [],
+  departments: [],
+  tasks: [],
+  attendance: [],
+  leaves: [],
+  settings: {},
+  activity: [],
+  unsub: []
+};
 
-function esc(s=''){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));}
-function uid(prefix){return prefix + '-' + Date.now().toString(36).slice(-5) + Math.floor(Math.random()*99)}
-function empName(empId){return state.employees.find(e=>e.empId===empId)?.name || empId || 'Unknown'}
-function depShort(name='GEN'){return String(name).replace(/[^a-zA-Z]/g,'').slice(0,3).toUpperCase() || 'GEN'}
-function busShort(b='GEN'){return ({'SBX Media':'SBX','SIA Jewels':'SIA','YOLOX Fashion':'YLX','Personal':'PER'}[b] || String(b).slice(0,3).toUpperCase())}
-function dateNice(d){return d ? new Date(d+'T00:00:00').toLocaleDateString() : '-'}
-function daysLeft(d){ if(!d) return ''; const diff=Math.ceil((new Date(d+'T23:59:59')-new Date())/86400000); if(diff<0)return `${Math.abs(diff)} day overdue`; if(diff===0)return 'Due today'; return `${diff} day left`; }
-function statusLabel(s){return ({todo:'To Do',progress:'In Progress',review:'Review',complete:'Completed'}[s]||s)}
-function priorityClass(p){return String(p||'medium').toLowerCase()}
-function safeFileName(name='file'){return String(name).replace(/[^a-zA-Z0-9._-]/g,'_')}
-function fileKind(name=''){ const ext=String(name).split('.').pop().toLowerCase(); if(['jpg','jpeg','png','webp','gif','svg'].includes(ext))return 'image'; if(['mp4','mov','webm'].includes(ext))return 'video'; if(ext==='pdf')return 'pdf'; if(['zip','rar'].includes(ext))return 'zip'; return 'file'; }
-function historyItem(text, by=state.role==='admin'?'Admin':state.employee?.name||'Employee'){return {text,by,date:today(),time:nowTime()}}
-function pointsForRating(r){ const n=Math.max(0, Math.min(5, Number(r||0))); return n ? n*20 : 0; }
-function ratingHTML(t){ return t.rating ? `<span class="mini rating-pill">⭐ ${esc(t.rating)}/5 • ${pointsForRating(t.rating)} pts</span>` : '<span class="mini">⭐ Not rated</span>'; }
-function taskMonth(t){ return monthKey(t.completedDate || t.createdDate || t.dueDate || today()); }
-function monthlyTaskPoints(empId, m=currentMonth()){ return state.tasks.filter(t=>t.empId===empId && t.status==='complete' && taskMonth(t)===m).reduce((sum,t)=>sum+Number(t.points||pointsForRating(t.rating)),0); }
-function employeePaidLimit(emp){ return Number(emp?.paidLeaves || state.settings.monthlyLeaves || 2); }
-function approvedLeaveDays(empId, m=currentMonth(), onlyPaid=false){ return state.attendance.filter(a=>a.empId===empId && monthKey(a.date)===m && (onlyPaid ? a.status==='Leave' : ['Leave','Absent'].includes(a.status) && a.leaveRequestId)).length; }
-function money(n){ return '₹' + Math.round(Number(n||0)).toLocaleString('en-IN'); }
-function monthlyCompletedTasks(empId, m=currentMonth()){ return state.tasks.filter(t=>t.empId===empId && t.status==='complete' && taskMonth(t)===m); }
-function bonusGoodTasks(empId, m=currentMonth()){ const minRating=Number(state.settings.bonusMinRating||4); return monthlyCompletedTasks(empId,m).filter(t=>Number(t.rating||0)>=minRating); }
-function employeeMonthCandidate(m=currentMonth()){
-  const ranked = state.employees.map(e=>({e, good:bonusGoodTasks(e.empId,m).length, pts:monthlyTaskPoints(e.empId,m)})).sort((a,b)=>b.good-a.good || b.pts-a.pts);
-  return ranked[0]?.good ? ranked[0].e : null;
-}
-function employeeOfMonth(m=currentMonth()){
-  const chosen = state.settings.employeeOfMonthId ? state.employees.find(e=>e.empId===state.settings.employeeOfMonthId) : null;
-  return chosen || employeeMonthCandidate(m);
-}
-function isEmployeeOfMonth(empId,m=currentMonth()){ return employeeOfMonth(m)?.empId === empId; }
-function eomBonusAmount(){ return Number(state.settings.employeeMonthBonus||1000); }
-function leaveBalance(emp,m=currentMonth()){
-  const paid=employeePaidLimit(emp);
-  const leaveUsed=state.attendance.filter(a=>a.empId===emp.empId && monthKey(a.date)===m && a.status==='Leave').length;
-  const extra=state.attendance.filter(a=>a.empId===emp.empId && monthKey(a.date)===m && a.status==='Absent' && a.leaveRequestId).length;
-  return {paid,used:leaveUsed,extra,balance:Math.max(0,paid-leaveUsed)};
-}
-function monthlyGoodTaskCount(empId,m=currentMonth()){ return bonusGoodTasks(empId,m).length; }
-function monthlyAbsentDays(empId, m=currentMonth()){ return state.attendance.filter(a=>a.empId===empId && monthKey(a.date)===m && a.status==='Absent').length; }
-function payrollCalc(emp, m=currentMonth()){
-  const salary=Number(emp?.salary||0);
-  const workingDays=Number(state.settings.workingDays||26);
-  const bonusAmount=Number(state.settings.performanceBonus||1000);
-  const minTasks=Number(state.settings.bonusMinTasks||10);
-  const minRating=Number(state.settings.bonusMinRating||4);
-  const completedTasks=monthlyCompletedTasks(emp.empId,m);
-  const goodTasks=completedTasks.filter(t=>Number(t.rating||0)>=minRating);
-  const bonusEligible=goodTasks.length>=minTasks;
-  const performanceBonus=bonusEligible ? bonusAmount : 0;
-  const eomBonus = isEmployeeOfMonth(emp.empId,m) ? eomBonusAmount() : 0;
-  const bonus = performanceBonus + eomBonus;
-  const absent=monthlyAbsentDays(emp.empId,m);
-  const deduction= workingDays ? (salary/workingDays)*absent : 0;
-  return {salary,workingDays,bonusAmount,minTasks,minRating,completed:completedTasks.length,goodTasks:goodTasks.length,bonusEligible,performanceBonus,eomBonus,bonus,absent,deduction,net:salary+bonus-deduction};
-}
-function daysBetween(from,to){ const out=[]; if(!from)return out; let d=new Date((from)+'T00:00:00'), end=new Date((to||from)+'T00:00:00'); while(d<=end){ out.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); } return out; }
-function avatarHTML(emp, small=false){ const initials=String(emp?.name||'U').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase(); return emp?.photoUrl ? `<img class="avatar ${small?'small-avatar':''}" src="${esc(emp.photoUrl)}" alt="${esc(emp.name)}">` : `<span class="avatar ${small?'small-avatar':''}">${esc(initials)}</span>`; }
-function linkHTML(url){ if(!url) return '<p class="muted-small">No reference link</p>'; const safe=esc(url); return `<a class="ref-link" href="${safe}" target="_blank" rel="noopener">🔗 Open Reference Link</a><p class="muted-small">${safe}</p>`; }
-function fileListHTML(files=[]){
-  if(!files.length)return '<p class="muted-small">No files uploaded</p>';
-  return `<div class="file-list">${files.map(f=>`<a class="file-chip" href="${esc(f.url)}" target="_blank" rel="noopener"><span>${f.kind==='image'?'🖼️':f.kind==='video'?'🎬':f.kind==='pdf'?'📄':f.kind==='zip'?'🗜️':'📎'}</span><b>${esc(f.name)}</b><small>${esc(f.uploadedBy||'')} • ${esc(f.uploadedAt||'')}</small></a>`).join('')}</div>`;
-}
-function taskHistoryHTML(t){
-  const h=t.history||[];
-  return h.length ? h.slice().reverse().map(x=>`<div class="timeline-item"><b>${esc(x.time||'')}</b><span>${esc(x.by||'')} — ${esc(x.text||'')} <small>${esc(x.date||'')}</small></span></div>`).join('') : '<p class="muted-small">No timeline yet</p>';
-}
-function commentsHTML(t){
-  const c=[...(t.comments||[]), ...(t.notes||[]).map(n=>({by:n.by,date:n.date,time:n.time,text:n.note}))];
-  return c.length ? c.slice().reverse().map(x=>`<div class="comment"><b>${esc(x.by||'User')}</b><small>${esc(x.date||'')} ${esc(x.time||'')}</small><p>${esc(x.text||'')}</p></div>`).join('') : '<p class="muted-small">No comments yet</p>';
-}
-function workVersionsHTML(t){
-  const w=t.workFiles||[];
-  if(!w.length)return '<p class="muted-small">No final work uploaded</p>';
-  return `<div class="file-list">${w.slice().reverse().map(f=>`<a class="file-chip" href="${esc(f.url)}" target="_blank" rel="noopener"><span>${f.kind==='image'?'🖼️':f.kind==='video'?'🎬':'📎'}</span><b>V${esc(f.version||1)} — ${esc(f.name)}</b><small>${esc(f.uploadedBy||'')} • ${esc(f.uploadedAt||'')}</small></a>`).join('')}</div>`;
-}
+const $ = (sel) => document.querySelector(sel);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const monthKey = (d = new Date()) => {
+  const x = typeof d === "string" ? new Date(d) : d;
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`;
+};
+const currentMonth = () => monthKey(new Date());
+const esc = (v = "") => String(v ?? "").replace(/[&<>'"]/g, (s) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[s]));
+const money = (n = 0) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+const uid = () => Math.random().toString(36).slice(2, 10);
+const isSunday = (dateStr = todayISO()) => new Date(`${dateStr}T12:00:00`).getDay() === 0;
+const empName = (id) => state.employees.find((e) => e.id === id)?.name || "-";
+const empById = (id) => state.employees.find((e) => e.id === id);
+const deptName = (idOrName) => state.departments.find((d) => d.id === idOrName)?.name || idOrName || "-";
+const goodRatingMin = () => Number(state.settings.goodRatingMin || 4);
+const bonusMinTasks = () => Number(state.settings.bonusMinTasks || 10);
+const bonusAmount = () => Number(state.settings.bonusAmount || 1000);
+const eomBonus = () => Number(state.settings.eomBonus || 1000);
+const pointsForRating = (rating) => Number(rating || 0) * 20;
 
-
-async function seed(){
-  const settingsRef = doc(db,'settings','office');
-  const snap = await getDoc(settingsRef);
-  if(!snap.exists()) await setDoc(settingsRef,{start:'10:00',end:'19:00',graceMinutes:10,breakMinutes:45,monthlyLeaves:2,weekend:'Sunday',announcement:'Welcome to Office Attendance System'});
-  const depSnap = await getDocs(collection(db,'departments'));
-  if(depSnap.empty){
-    for (const name of ['Design','Social Media','Website','Listing','Marketing','Photoshoot']) await addDoc(collection(db,'departments'),{name});
+function toast(message, type = "success") {
+  let wrap = $(".toast-wrap");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.className = "toast-wrap";
+    document.body.appendChild(wrap);
   }
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 2800);
 }
-async function loadAll(){
-  const [emp,dep,task,att,act,leave,set] = await Promise.all([
-    getDocs(collection(db,'employees')), getDocs(collection(db,'departments')), getDocs(collection(db,'tasks')), getDocs(collection(db,'attendance')), getDocs(collection(db,'activity')), getDocs(collection(db,'leave_requests')), getDoc(doc(db,'settings','office'))
+
+function ensureStyles() {
+  if ($("#oas-dynamic-style")) return;
+  const css = `
+  :root{--bg:#eef7ff;--card:#fff;--text:#111827;--muted:#728098;--line:#dfe8f3;--primary:#5b6cff;--primary2:#7b4dff;--green:#12b981;--blue:#0ea5e9;--orange:#f97316;--red:#ef4444;--purple:#a855f7;--shadow:0 22px 55px rgba(31,42,68,.12);--radius:22px;}
+  *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;background:linear-gradient(135deg,#e3f7ff,#f4f5ff);color:var(--text)} button,input,select,textarea{font:inherit} button{cursor:pointer;border:0}.hidden{display:none!important}
+  .login-page{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(480px,92vw);background:rgba(255,255,255,.9);border:1px solid #edf2f7;border-radius:30px;box-shadow:var(--shadow);padding:30px}.brand{display:flex;gap:16px;align-items:center}.logo{width:54px;height:54px;border-radius:16px;background:linear-gradient(135deg,#5b6cff,#50c9b7);color:#fff;display:grid;place-items:center;font-weight:900}.brand h1{font-size:26px;margin:0}.brand p{margin:4px 0 0;color:var(--muted)}.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#edf3fb;padding:6px;border-radius:16px;margin:26px 0}.tabs button{padding:14px;border-radius:12px;background:transparent;font-weight:800;color:#718096}.tabs button.active{background:#fff;color:#111827;box-shadow:0 8px 20px rgba(0,0,0,.08)}.field{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}.field label{font-size:13px;font-weight:800;color:#455166}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:14px;padding:13px 14px;background:#fbfdff;outline:none}.field textarea{min-height:100px;resize:vertical}.btn{border-radius:14px;padding:13px 18px;font-weight:900;background:#eef3fb;color:#1f2a44}.btn.primary{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff}.btn.danger{background:#fee2e2;color:#991b1b}.btn.success{background:#dcfce7;color:#166534}.btn.warn{background:#ffedd5;color:#9a3412}.full{width:100%}.small{padding:8px 11px;font-size:13px;border-radius:11px}.hint{font-size:13px;color:#475569;margin-top:12px}
+  .app{min-height:100vh;display:grid;grid-template-columns:260px 1fr}.sidebar{position:sticky;top:0;height:100vh;background:rgba(255,255,255,.84);backdrop-filter:blur(14px);border-right:1px solid #e6eef7;padding:22px;display:flex;flex-direction:column;gap:20px}.side-brand{display:flex;gap:12px;align-items:center;font-weight:900;font-size:20px}.nav{display:grid;gap:8px}.nav button{text-align:left;padding:14px;border-radius:14px;background:transparent;color:#526177;font-weight:800}.nav button.active,.nav button:hover{background:#e8efff;color:#4f46e5}.logout{margin-top:auto}.main{padding:28px;overflow:auto}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.breadcrumb{color:#6d7c93;font-size:14px}.topbar h2{font-size:32px;margin:6px 0 0}.pills{display:flex;gap:12px;align-items:center}.pill{background:#fff;border:1px solid #e6eef7;border-radius:999px;padding:12px 16px;font-weight:800;color:#516174}.avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;background:linear-gradient(135deg,#5b6cff,#50c9b7);color:#fff;display:grid;place-items:center;font-weight:900}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.card{background:rgba(255,255,255,.88);border:1px solid #e6eef7;border-radius:var(--radius);box-shadow:0 15px 45px rgba(30,41,59,.07);padding:20px}.kpi-card{color:#fff;min-height:130px;position:relative;overflow:hidden}.kpi-card h3{font-size:34px;margin:8px 0}.kpi-card p{margin:0;font-weight:800}.kpi-card small{opacity:.9}.green{background:linear-gradient(135deg,#06b682,#0fc89b)}.blue{background:linear-gradient(135deg,#0ea5e9,#2563eb)}.purple{background:linear-gradient(135deg,#a855f7,#6d5dfc)}.orange{background:linear-gradient(135deg,#fb923c,#f43f00)}.grid{display:grid;gap:18px}.grid.two{grid-template-columns:1fr 1fr}.grid.three{grid-template-columns:repeat(3,1fr)}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.section-title h3{margin:0}.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.form-grid .wide{grid-column:1/-1}.table-wrap{overflow:auto}.table{width:100%;border-collapse:separate;border-spacing:0 10px}.table th{text-align:left;font-size:12px;color:#68778d;padding:8px}.table td{background:#fbfdff;border-top:1px solid #e9eff7;border-bottom:1px solid #e9eff7;padding:12px}.table td:first-child{border-left:1px solid #e9eff7;border-radius:14px 0 0 14px}.table td:last-child{border-right:1px solid #e9eff7;border-radius:0 14px 14px 0}.row-actions{display:flex;gap:8px;flex-wrap:wrap}.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#eef3fb;font-size:12px;font-weight:900;color:#475569}.badge.green{background:#dcfce7;color:#166534}.badge.blue{background:#dbeafe;color:#1e40af}.badge.orange{background:#ffedd5;color:#9a3412}.badge.red{background:#fee2e2;color:#991b1b}.badge.purple{background:#f3e8ff;color:#6b21a8}.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.column{background:#f8fbff;border:1px solid #e5edf7;border-radius:22px;padding:14px;min-height:330px}.column h4{margin:0 0 12px;display:flex;justify-content:space-between}.task-card{background:#fff;border:1px solid #e6eef7;border-radius:18px;padding:14px;margin-bottom:12px;box-shadow:0 10px 25px rgba(30,41,59,.06)}.task-card h4{margin:8px 0}.task-meta{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.link{color:#4f46e5;font-weight:900;text-decoration:none}.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(8px);display:grid;place-items:center;z-index:1000;padding:20px}.modal{width:min(780px,96vw);max-height:92vh;overflow:auto;background:#fff;border:1px solid #eef2f7;border-radius:26px;box-shadow:0 30px 90px rgba(0,0,0,.25);padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #eef2f7;padding-bottom:14px;margin-bottom:16px}.modal-head h3{margin:0}.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}.close{background:#f1f5f9;border-radius:12px;padding:8px 12px}.toast-wrap{position:fixed;right:18px;top:18px;display:grid;gap:10px;z-index:2000}.toast{background:#111827;color:#fff;padding:12px 16px;border-radius:14px;box-shadow:0 12px 30px rgba(0,0,0,.2);font-weight:800}.toast.error{background:#dc2626}.toast.success{background:#16a34a}.progress{height:10px;background:#edf2f7;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;background:linear-gradient(135deg,#5b6cff,#50c9b7)}.dept-card{display:flex;justify-content:space-between;gap:12px;align-items:center}.emp-mini{display:flex;align-items:center;gap:8px;background:#f8fbff;border:1px solid #e8eef7;border-radius:14px;padding:9px;margin-top:8px}.muted{color:var(--muted)}.profile-row{display:flex;gap:10px;align-items:center}.leader{display:flex;align-items:center;justify-content:space-between;border:1px solid #e7eef8;background:#fbfdff;border-radius:16px;padding:12px;margin-top:10px}
+  @media(max-width:1050px){.app{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.nav{grid-template-columns:repeat(3,1fr)}.cards,.grid.three,.grid.two,.kanban,.form-grid{grid-template-columns:1fr}.main{padding:18px}.topbar{align-items:flex-start;gap:12px;flex-direction:column}}
+  `;
+  const style = document.createElement("style");
+  style.id = "oas-dynamic-style";
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
+function modal({ title, body, onSubmit, submitText = "Save", wide = false }) {
+  return new Promise((resolve) => {
+    const box = document.createElement("div");
+    box.className = "modal-backdrop";
+    box.innerHTML = `<div class="modal" style="width:${wide ? "min(980px,96vw)" : "min(760px,96vw)"}">
+      <div class="modal-head"><h3>${esc(title)}</h3><button class="close" type="button">✕</button></div>
+      <form class="modal-form">${body}<div class="modal-actions"><button class="btn" type="button" data-cancel>Cancel</button><button class="btn primary" type="submit">${esc(submitText)}</button></div></form>
+    </div>`;
+    document.body.appendChild(box);
+    box.querySelector(".close").onclick = () => { box.remove(); resolve(null); };
+    box.querySelector("[data-cancel]").onclick = () => { box.remove(); resolve(null); };
+    box.querySelector(".modal-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+      try {
+        if (onSubmit) await onSubmit(data);
+        box.remove();
+        resolve(data);
+      } catch (err) {
+        console.error(err);
+        toast(err.message || "Something went wrong", "error");
+      }
+    };
+  });
+}
+
+function confirmBox(title, text = "Are you sure?") {
+  return new Promise((resolve) => {
+    const box = document.createElement("div");
+    box.className = "modal-backdrop";
+    box.innerHTML = `<div class="modal" style="width:min(430px,94vw)"><div class="modal-head"><h3>${esc(title)}</h3><button class="close">✕</button></div><p class="muted">${esc(text)}</p><div class="modal-actions"><button class="btn" data-no>Cancel</button><button class="btn danger" data-yes>Delete</button></div></div>`;
+    document.body.appendChild(box);
+    box.querySelector(".close").onclick = () => { box.remove(); resolve(false); };
+    box.querySelector("[data-no]").onclick = () => { box.remove(); resolve(false); };
+    box.querySelector("[data-yes]").onclick = () => { box.remove(); resolve(true); };
+  });
+}
+
+function renderLogin() {
+  ensureStyles();
+  document.body.innerHTML = `<main class="login-page"><section class="login-card">
+    <div class="brand"><div class="logo">OA</div><div><h1>Office Attendance System</h1><p>Attendance, work tracking & task management</p></div></div>
+    <div class="tabs"><button id="adminTab" class="active">Admin Login</button><button id="empTab">Employee Login</button></div>
+    <form id="loginForm">
+      <div class="field"><label>Email / Employee ID</label><input name="email" id="loginEmail" placeholder="admin@office.com" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input name="password" id="loginPass" type="password" placeholder="admin123" autocomplete="current-password"></div>
+      <button class="btn primary full" id="loginBtn">Login as Admin</button>
+    </form>
+    <p class="hint" id="loginHint">Default demo admin: admin@office.com / admin123</p>
+  </section></main>`;
+  let mode = "admin";
+  $("#adminTab").onclick = () => { mode = "admin"; $("#adminTab").classList.add("active"); $("#empTab").classList.remove("active"); $("#loginBtn").textContent = "Login as Admin"; $("#loginHint").textContent = "Default demo admin: admin@office.com / admin123"; };
+  $("#empTab").onclick = () => { mode = "employee"; $("#empTab").classList.add("active"); $("#adminTab").classList.remove("active"); $("#loginBtn").textContent = "Login as Employee"; $("#loginHint").textContent = "Use employee email/ID and password created by admin."; };
+  $("#loginForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const email = $("#loginEmail").value.trim();
+    const pass = $("#loginPass").value.trim();
+    if (mode === "admin") {
+      if (email === ADMIN_EMAIL && pass === ADMIN_PASSWORD) {
+        localStorage.setItem("oas_role", "admin"); localStorage.setItem("oas_userId", "admin");
+        state.role = "admin"; state.userId = "admin"; await startApp();
+      } else toast("Wrong admin email/password", "error");
+    } else {
+      await loadOnce();
+      const emp = state.employees.find((x) => (x.email === email || x.empId === email) && x.password === pass);
+      if (!emp) return toast("Employee login not found", "error");
+      localStorage.setItem("oas_role", "employee"); localStorage.setItem("oas_userId", emp.id);
+      state.role = "employee"; state.userId = emp.id; await startApp();
+    }
+  };
+}
+
+async function loadOnce() {
+  const [emps, deps, tasks, atts, leaves, acts] = await Promise.all([
+    getDocs(collection(db, "employees")), getDocs(collection(db, "departments")), getDocs(collection(db, "tasks")), getDocs(collection(db, "attendance")), getDocs(collection(db, "leave_requests")), getDocs(collection(db, "activity_logs"))
   ]);
-  state.employees = emp.docs.map(d=>({id:d.id,...d.data()}));
-  state.departments = dep.docs.map(d=>({id:d.id,...d.data()}));
-  state.tasks = task.docs.map(d=>({id:d.id,...d.data()}));
-  state.attendance = att.docs.map(d=>({id:d.id,...d.data()}));
-  state.activity = act.docs.map(d=>({id:d.id,...d.data()}));
-  state.leaveRequests = leave.docs.map(d=>({id:d.id,...d.data()}));
-  state.settings = set.data()||{};
-}
-async function refresh(){ await loadAll(); drawCurrent(); }
-
-function showApp(role){
-  $('#loginPage').classList.add('hidden'); $('#app').classList.remove('hidden');
-  $('#adminNav').classList.toggle('hidden', role!=='admin'); $('#employeeNav').classList.toggle('hidden', role!=='employee');
-  $('#userBadge').innerHTML = role==='admin' ? `${state.settings.logoUrl?`<img class="avatar small-avatar" src="${esc(state.settings.logoUrl)}">`:''} Admin` : `${avatarHTML(state.employee,true)} ${esc(state.employee?.name||'Employee')}`;
-  $('#todayText').textContent = new Date().toDateString();
-  switchView(role==='admin'?'adminDashboard':'employeeDashboard');
-}
-function switchView(id){
-  $$('.view').forEach(v=>v.classList.add('hidden')); $('#'+id).classList.remove('hidden');
-  $$('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.view===id));
-  $('#pageTitle').textContent = id.includes('employee') ? `Good morning ${state.employee?.name||''}` : 'Good morning Admin';
-  drawCurrent();
+  state.employees = emps.docs.map((d) => ({ id: d.id, ...d.data() }));
+  state.departments = deps.docs.map((d) => ({ id: d.id, ...d.data() }));
+  state.tasks = tasks.docs.map((d) => ({ id: d.id, ...d.data() }));
+  state.attendance = atts.docs.map((d) => ({ id: d.id, ...d.data() }));
+  state.leaves = leaves.docs.map((d) => ({ id: d.id, ...d.data() }));
+  state.activity = acts.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const setSnap = await getDocs(collection(db, "settings"));
+  setSnap.docs.forEach((d) => { if (d.id === "office") state.settings = d.data(); });
 }
 
-$$('.switcher button').forEach(btn=>btn.onclick=()=>{$$('.switcher button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');$('#adminLogin').classList.toggle('hidden',btn.dataset.login!=='admin');$('#employeeLogin').classList.toggle('hidden',btn.dataset.login!=='employee')});
-$$('.nav button').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
-$('#logoutBtn').onclick=()=>location.reload();
-$('#adminLogin').onsubmit=async e=>{e.preventDefault(); if($('#adminEmail').value.trim()==='admin@office.com' && $('#adminPassword').value.trim()==='admin123'){try{state.role='admin'; await seed(); await loadAll(); showApp('admin')}catch(err){console.error(err);toast('Firebase rules/permission issue')}} else toast('Wrong admin login')};
-$('#employeeLogin').onsubmit=async e=>{e.preventDefault(); try{await loadAll(); const emp=state.employees.find(x=>x.empId===$('#employeeLoginId').value.trim() && x.password===$('#employeeLoginPassword').value.trim()); if(emp){state.role='employee'; state.employee=emp; showApp('employee')} else toast('Wrong employee ID or password')}catch(err){console.error(err);toast('Firebase rules/permission issue')}};
+function subscribeData() {
+  state.unsub.forEach((u) => u()); state.unsub = [];
+  const listen = (name, cb) => state.unsub.push(onSnapshot(collection(db, name), (snap) => { cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); renderView(); }));
+  listen("employees", (v) => state.employees = v);
+  listen("departments", (v) => state.departments = v);
+  listen("tasks", (v) => state.tasks = v);
+  listen("attendance", (v) => state.attendance = v);
+  listen("leave_requests", (v) => state.leaves = v);
+  listen("activity_logs", (v) => state.activity = v);
+  state.unsub.push(onSnapshot(doc(db, "settings", "office"), (d) => { state.settings = d.exists() ? d.data() : {}; renderView(); }));
+}
 
-function todayRecords(){return state.attendance.filter(a=>a.date===today())}
-function currentStatus(empId){ if(isSundayDate(today())) return 'Sunday Leave'; const r=todayRecords().find(a=>a.empId===empId); return r?.status||'Absent'}
-function minutes(t){ if(!t) return null; const m=String(t).match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i); if(!m) return null; let h=+m[1], min=+m[2]; if(m[3]){ const ap=m[3].toUpperCase(); if(ap==='PM'&&h<12)h+=12; if(ap==='AM'&&h===12)h=0;} return h*60+min; }
-function fmtHours(min){ if(!min || min<0) return '--'; const h=Math.floor(min/60), m=min%60; return `${h}h ${m}m`; }
-function recWorkHours(r){ const a=minutes(r?.entry), b=minutes(r?.exit); return (a!=null && b!=null) ? fmtHours(b-a) : '--'; }
-function isLate(r){ const st=minutes(state.settings.start||'10:00'), en=minutes(r?.entry), g=Number(state.settings.graceMinutes||0); return st!=null && en!=null && en>st+g; }
-function overtime(r){ const end=minutes(state.settings.end||'19:00'), ex=minutes(r?.exit); return (end!=null && ex!=null && ex>end) ? fmtHours(ex-end) : '--'; }
-async function logActivity(empId, text, type='log'){ await addDoc(collection(db,'activity'),{empId,text,type,date:today(),time:nowTime(),createdAt:serverTimestamp()}); }
-function liveStatus(empId){ const r=todayRecords().find(a=>a.empId===empId); const task=state.tasks.find(t=>t.empId===empId && ['progress','review'].includes(t.status)); if(!r) return {label:'Offline', cls:'absent'}; if(r.status==='Break') return {label:'On Break', cls:'break'}; if(r.status==='Exited') return {label:'Offline', cls:'absent'}; if(task) return {label:`Working: ${task.business||task.title}`, cls:'progress'}; return {label:'Working', cls:'present'}; }
-
-function drawCurrent(){ const active=document.querySelector('.view:not(.hidden)'); if(!active) return; ({adminDashboard,employeesView,departmentsView,tasksView,attendanceView,requestsView,payrollView,settingsView,employeeDashboard,employeeTasksView,employeeSummaryView,employeeMessageView}[active.id]||(()=>{}))(); }
-function statCards(){
-  const rec=todayRecords();
-  const present=rec.filter(r=>['Present','Break','Exited'].includes(r.status)).length;
-  const review=state.tasks.filter(t=>t.status==='review').length;
-  const absent=isSundayDate(today())?0:Math.max(0,state.employees.length-present);
-  const eom=employeeOfMonth();
-  return `<div class="grid cards kpi-cards">
-    <div class="card stat kpi green"><div><p>Total Employees</p><h3>${state.employees.length}</h3><small>Active team members</small></div><span class="kpi-icon">👥</span></div>
-    <div class="card stat kpi blue"><div><p>Present Today</p><h3>${present}</h3><small>Absent: ${absent}</small></div><span class="kpi-icon">✅</span></div>
-    <div class="card stat kpi purple"><div><p>Waiting Review</p><h3>${review}</h3><small>Need admin approval</small></div><span class="kpi-icon">📋</span></div>
-    <div class="card stat kpi orange"><div><p>Employee of Month</p><h3>${eom?esc(eom.name).split(' ')[0]:'--'}</h3><small>${eom?monthlyGoodTaskCount(eom.empId)+' good tasks • '+eomBonusAmount().toLocaleString('en-IN')+' bonus':'Set in settings'}</small></div><span class="kpi-icon">🏆</span></div>
-  </div>`
-}
-function employeeOfMonthAdminCard(){
-  const eom=employeeOfMonth();
-  if(!eom) return `<div class="card eom-card"><h3>🏆 Employee of the Month</h3><p class="muted-small">Abhi koi employee select nahi hai. Settings me admin set kar sakta hai.</p></div>`;
-  const pay=payrollCalc(eom,currentMonth());
-  return `<div class="card eom-card"><div class="eom-left">${avatarHTML(eom)}<div><h3>🏆 Employee of the Month</h3><h2>${esc(eom.name)}</h2><p>${esc(eom.department||'-')} • ${monthlyGoodTaskCount(eom.empId)} good rated tasks</p></div></div><div class="eom-prize"><span>Extra Bonus</span><b>${money(pay.eomBonus)}</b></div></div>`;
-}
-function adminDashboard(){
-  const live = state.employees.map(e=>{const st=liveStatus(e.empId);return `<div class="live-row"><b>${esc(e.name)}</b><span class="status ${st.cls}">${esc(st.label)}</span></div>`}).join('') || '<p>No employees yet</p>';
-  const completed = state.tasks.filter(t=>t.status==='complete').length;
-  const leaderboard = state.employees.map(e=>({e,pts:monthlyTaskPoints(e.empId), good:monthlyGoodTaskCount(e.empId)})).sort((a,b)=>b.good-a.good || b.pts-a.pts).map(x=>`<div class="live-row"><b>${avatarHTML(x.e,true)} ${esc(x.e.name)}</b><span class="status complete">${x.good} good • ${x.pts} pts</span></div>`).join('') || '<p>No points yet</p>';
-  const pendingLeaves = state.leaveRequests.filter(l=>l.status==='pending').length;
-  $('#adminDashboard').innerHTML = `${statCards()}${employeeOfMonthAdminCard()}<div class="grid two" style="margin-top:18px"><div class="card"><h3>Task Status Graph</h3><div class="chart">${['todo','progress','review','complete'].map(s=>`<div class="bar" title="${s}" style="height:${20+state.tasks.filter(t=>t.status===s).length*28}px"></div>`).join('')}</div></div><div class="card"><h3>Task Report</h3><p class="notice">${esc(state.settings.announcement||'')}</p><h2>${completed}/${state.tasks.length}</h2><p>Tasks completed</p></div></div><div class="grid two" style="margin-top:18px"><div class="card"><h3>Live Team Status</h3>${live}</div><div class="card"><h3>Recent Task Activity</h3><p class="notice">Pending Leave Requests: ${pendingLeaves}</p>${state.activity.filter(a=>a.date===today()).slice(-8).reverse().map(a=>`<div class="timeline-item"><b>${a.time}</b><span>${esc(empName(a.empId))} — ${esc(a.text)}</span></div>`).join('')||'<p>No activity today</p>'}</div></div><div class="card"><h3>This Month Performance Leaderboard</h3>${leaderboard}</div>`;
-}
-function employeesView(){
-  const depOpts = state.departments.map(d=>`<option>${esc(d.name)}</option>`).join('');
-  $('#employeesView').innerHTML = `<div class="card"><h3>Add Employee</h3><form id="empForm" class="form-grid"><input name="name" placeholder="Employee name" required><input name="empId" placeholder="Employee ID e.g. EMP001" required><input name="password" placeholder="Password" required><select name="department">${depOpts}</select><input name="role" placeholder="Role"><input name="phone" placeholder="Phone"><input name="paidLeaves" type="number" min="0" value="${esc(state.settings.monthlyLeaves||2)}" placeholder="Paid leaves/month"><input name="salary" type="number" min="0" placeholder="Monthly salary ₹"><input name="photoUrl" placeholder="Profile photo URL"><button class="primary-btn">Add Employee</button></form></div><div class="card"><h3>Employees</h3><div class="table-wrap"><table class="table"><tr><th>Employee</th><th>ID</th><th>Department</th><th>Paid Leave</th><th>Used</th><th>Salary</th><th>This Month Points</th><th>Status</th><th>Live</th><th>Action</th></tr>${state.employees.map(e=>{const st=liveStatus(e.empId);return `<tr><td>${avatarHTML(e,true)} ${esc(e.name)}</td><td>${esc(e.empId)}</td><td>${esc(e.department||'-')}</td><td>${employeePaidLimit(e)}</td><td>${approvedLeaveDays(e.empId)}</td><td>${money(e.salary||0)}</td><td>${monthlyTaskPoints(e.empId)}</td><td><span class="status ${currentStatus(e.empId).toLowerCase().replaceAll(' ','-')}">${currentStatus(e.empId)}</span></td><td><span class="status ${st.cls}">${esc(st.label)}</span></td><td><button class="ghost-btn" onclick="window.editEmployee('${e.id}')">Edit</button> <button class="danger-btn" onclick="window.delEmployee('${e.id}')">Delete</button></td></tr>`}).join('')}</table></div></div>`;
-  $('#empForm').onsubmit=async ev=>{ev.preventDefault(); const data=Object.fromEntries(new FormData(ev.target)); if(state.employees.some(e=>e.empId===data.empId)) return toast('Employee ID already exists'); await addDoc(collection(db,'employees'),data); toast('Employee added'); await refresh();};
-}
-window.delEmployee=async id=>{ const ok=await modalConfirm({title:'Delete Employee',message:'Employee delete karne ke baad ye list se remove ho jayega.',confirmText:'Delete Employee',danger:true}); if(ok){await deleteDoc(doc(db,'employees',id)); toast('Employee deleted'); await refresh();} };
-window.editEmployee=async id=>{ const e=state.employees.find(x=>x.id===id); if(!e)return; const data=await modalForm({title:'Edit Employee',submitText:'Save Employee',fields:[{name:'name',label:'Employee Name',value:e.name||'',required:true},{name:'empId',label:'Employee ID',value:e.empId||'',required:true},{name:'password',label:'Password',value:e.password||'',required:true},{name:'department',label:'Department',type:'select',value:e.department||'',options:state.departments.map(d=>d.name)},{name:'role',label:'Role',value:e.role||''},{name:'phone',label:'Phone',value:e.phone||''},{name:'paidLeaves',label:'Paid Leaves / Month',type:'number',value:e.paidLeaves||state.settings.monthlyLeaves||2},{name:'salary',label:'Monthly Salary ₹',type:'number',value:e.salary||0},{name:'photoUrl',label:'Profile Photo URL',type:'url',value:e.photoUrl||'',placeholder:'https://...'}]}); if(!data)return; await updateDoc(doc(db,'employees',id),data); toast('Employee updated'); await refresh(); };
-function departmentsView(){
-  const deptCards = state.departments.map(d=>{
-    const emps = state.employees.filter(e=>String(e.department||'').toLowerCase()===String(d.name||'').toLowerCase());
-    return `<div class="dept-card"><div class="dept-top"><div><h3>${esc(d.name)}</h3><p>${emps.length} employee working</p></div><div><button class="ghost-btn" onclick="window.editDepartment('${d.id}')">Edit</button> <button class="danger-btn" onclick="window.delDepartment('${d.id}')">Delete</button></div></div><div class="dept-people">${emps.map(e=>{const st=liveStatus(e.empId);return `<div class="dept-person">${avatarHTML(e,true)}<div><b>${esc(e.name)}</b><small>${esc(e.role||e.empId)}</small></div><span class="status ${st.cls}">${esc(st.label)}</span></div>`}).join('') || '<p class="muted-small">No employee in this department</p>'}</div></div>`;
-  }).join('');
-  $('#departmentsView').innerHTML = `<div class="card"><h3>Departments</h3><form id="depForm" class="form-grid"><input name="name" placeholder="Department name" required><button class="primary-btn">Add Department</button></form></div><div class="department-grid">${deptCards || '<div class="card"><p>No departments yet</p></div>'}</div>`;
-  $('#depForm').onsubmit=async ev=>{ev.preventDefault(); const data=Object.fromEntries(new FormData(ev.target)); if(state.departments.some(d=>String(d.name).toLowerCase()===String(data.name).toLowerCase())) return toast('Department already exists'); await addDoc(collection(db,'departments'),data); toast('Department added'); await refresh();};
-}
-window.delDepartment=async id=>{ const ok=await modalConfirm({title:'Delete Department',message:'Department delete karna hai?',confirmText:'Delete Department',danger:true}); if(ok){await deleteDoc(doc(db,'departments',id)); toast('Department deleted'); await refresh();} };
-window.editDepartment=async id=>{ const d=state.departments.find(x=>x.id===id); if(!d)return; const data=await modalForm({title:'Edit Department',submitText:'Update Department',fields:[{name:'name',label:'Department Name',value:d.name||'',required:true}]}); if(!data)return; await updateDoc(doc(db,'departments',id),data); toast('Department updated'); await refresh(); };
-
-function tasksView(){
-  const depOpts = state.departments.map(d=>`<option>${esc(d.name)}</option>`).join('');
-  const empOpts = state.employees.map(e=>`<option value="${esc(e.empId)}">${esc(e.name)} (${esc(e.empId)})</option>`).join('');
-  const fEmp = `<option>All</option>${state.employees.map(e=>`<option value="${esc(e.empId)}" ${taskFilters.employee===e.empId?'selected':''}>${esc(e.name)}</option>`).join('')}`;
-  $('#tasksView').innerHTML = `<div class="card"><h3>Version 3 — Task Management</h3><form id="taskForm" class="form-grid"><input name="title" placeholder="Task title" required><input name="taskCode" placeholder="Task code auto / manual"><select name="business"><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select name="department">${depOpts}</select><select name="empId" required><option value="">Assign employee</option>${empOpts}</select><select name="priority"><option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option></select><input name="dueDate" type="date"><input name="estimatedHours" type="number" min="0" step="0.5" placeholder="Estimated hours"><textarea name="description" placeholder="Task description / instructions"></textarea><input name="referenceLink" type="url" placeholder="Reference Link (Google Drive / Canva / Figma / YouTube)"><button class="primary-btn">Create Task</button></form></div><div class="card"><h3>Task Filters</h3><div class="filter-row"><select id="filterBusiness"><option>All</option><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select id="filterStatus"><option>All</option><option value="todo">To Do</option><option value="progress">In Progress</option><option value="review">Review</option><option value="complete">Completed</option></select><select id="filterEmp">${fEmp}</select><input id="filterSearch" placeholder="Search task/code"><button id="clearFilters" class="ghost-btn">Clear</button></div>${kanbanBoard(filteredTasks(), true)}</div>`;
-  $('#filterBusiness').value=taskFilters.business; $('#filterStatus').value=taskFilters.status; $('#filterSearch').value=taskFilters.search;
-  $('#taskForm').onsubmit=async ev=>{ev.preventDefault(); const fd=new FormData(ev.target); const data=Object.fromEntries(fd); if(!data.taskCode) data.taskCode=makeTaskCode(data.business,data.department); data.referenceFiles=[]; data.workFiles=[]; data.comments=[]; data.notes=[]; data.history=[historyItem(`Task created and assigned to ${empName(data.empId)}`,'Admin')]; data.status='todo'; data.rating=''; data.points=0; data.createdAt=serverTimestamp(); data.createdDate=today(); data.updatedAt=serverTimestamp(); await addDoc(collection(db,'tasks'),data); await logActivity(data.empId,`New task assigned: ${data.taskCode}`,'task'); toast('Task created'); await refresh();};
-  $('#filterBusiness').onchange=e=>{taskFilters.business=e.target.value;tasksView()}; $('#filterStatus').onchange=e=>{taskFilters.status=e.target.value;tasksView()}; $('#filterEmp').onchange=e=>{taskFilters.employee=e.target.value;tasksView()}; $('#filterSearch').oninput=e=>{taskFilters.search=e.target.value;tasksView()}; $('#clearFilters').onclick=()=>{taskFilters={business:'All',status:'All',employee:'All',search:''};tasksView()};
-  initKanbanDnd();
-}
-function makeTaskCode(b,d){ const n=String(state.tasks.length+1).padStart(4,'0'); return `${busShort(b)}-${depShort(d)}-${n}`; }
-function filteredTasks(){
-  return state.tasks.filter(t=> (taskFilters.business==='All'||t.business===taskFilters.business) && (taskFilters.status==='All'||t.status===taskFilters.status) && (taskFilters.employee==='All'||t.empId===taskFilters.employee) && (!taskFilters.search || String(t.title+t.taskCode+t.description).toLowerCase().includes(taskFilters.search.toLowerCase())) );
-}
-function kanbanBoard(tasks, admin=false){
-  const cols = admin ? ['todo','progress','review','complete'] : ['todo','progress','review'];
-  return `<div class="kanban" data-admin="${admin?'1':'0'}">${cols.map(s=>`<div class="kanban-col" data-status="${s}"><div class="kanban-head"><h3>${statusLabel(s)}</h3><span class="count">${tasks.filter(t=>t.status===s).length}</span></div><div class="drop-zone" data-status="${s}">${tasks.filter(t=>t.status===s).sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999')).map(t=>taskCard(t,admin)).join('') || '<div class="empty">No tasks</div>'}</div></div>`).join('')}</div><p class="drag-hint">Drag task cards between columns. Employee can send only up to Review. Final Complete is admin only.</p>`;
-}
-function taskCard(t,admin=false){
-  const canEmpMove = state.role==='employee' && t.status!=='complete';
-  const lock = state.role==='employee' && t.status==='complete';
-  const refs=t.referenceLink?1:0, comments=(t.comments||[]).length+(t.notes||[]).length;
-  return `<div class="task-card" draggable="${lock?'false':'true'}" data-task-id="${t.id}" data-current-status="${t.status||'todo'}"><div class="task-meta"><span class="mini">${esc(t.taskCode||'NO-CODE')}</span><span class="status ${priorityClass(t.priority)}">${esc(t.priority||'Medium')}</span><span class="mini">${esc(t.business||'-')}</span></div><h4>${esc(t.title)}</h4><p class="task-desc">${esc(t.description||'No description')}</p><div class="task-meta"><span class="mini">👤 ${esc(empName(t.empId))}</span><span class="mini">🏢 ${esc(t.department||'-')}</span><span class="mini">📅 ${dateNice(t.dueDate)} ${daysLeft(t.dueDate)?'• '+daysLeft(t.dueDate):''}</span><span class="mini">⏱ ${esc(t.estimatedHours||'-')}h</span></div><div class="task-meta"><span class="mini">🔗 Ref ${refs}</span><span class="mini">💬 ${comments}</span>${ratingHTML(t)}<span class="mini">⏱ Actual ${esc(t.actualMinutes?fmtHours(Number(t.actualMinutes)):'--')}</span></div>${t.revisionNote?`<p class="revision-note">Revision: ${esc(t.revisionNote)}</p>`:''}<div class="task-actions"><button class="ghost-btn" onclick="window.viewTask('${t.id}')">Details</button>${adminActions(t,admin)}${employeeActions(t,canEmpMove)}</div></div>`;
-}
-function adminActions(t,admin){ if(!admin)return ''; let html=`<button class="ghost-btn" onclick="window.editTask('${t.id}')">Edit</button><button class="danger-btn" onclick="window.deleteTask('${t.id}')">Delete</button>`; if(t.status==='review') html+=`<button class="ghost-btn" onclick="window.requestRevision('${t.id}')">Need Changes</button><button class="primary-btn" onclick="window.moveTask('${t.id}','complete')">Approve Complete</button>`; if(t.status==='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','review')">Reopen Review</button>`; if(t.status!=='todo' && t.status!=='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','todo')">Back To Do</button>`; return html; }
-function employeeActions(t,can){ if(!can)return ''; let timer = t.activeTimerStart ? `<button class="ghost-btn" onclick="window.stopWork('${t.id}')">Stop Timer</button>` : `<button class="ghost-btn" onclick="window.startWork('${t.id}')">Start Timer</button>`; if(t.status==='todo') return `<button class="primary-btn" onclick="window.moveTask('${t.id}','progress')">Start</button>${timer}`; if(t.status==='progress') return `${timer}<button class="primary-btn" onclick="window.moveTask('${t.id}','review')">Send Review</button><button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Comment</button>`; if(t.status==='review') return `<button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Comment</button>`; return ''; }
-function canMoveTask(t, status){
-  if(!t) return {ok:false,msg:'Task not found'};
-  if(state.role==='employee'){
-    if(t.empId !== state.employee?.empId) return {ok:false,msg:'This task is not assigned to you'};
-    if(status==='complete') return {ok:false,msg:'Final Complete only admin karega'};
-    if(t.status==='complete') return {ok:false,msg:'Completed task locked hai'};
+async function seedDefaults() {
+  const deps = await getDocs(collection(db, "departments"));
+  if (deps.empty) {
+    await addDoc(collection(db, "departments"), { name: "Marketing", createdAt: serverTimestamp() });
+    await addDoc(collection(db, "departments"), { name: "Development", createdAt: serverTimestamp() });
+    await addDoc(collection(db, "departments"), { name: "Design", createdAt: serverTimestamp() });
   }
-  if(state.role==='admin' && status==='complete' && t.status!=='review') return {ok:false,msg:'Complete karne se pehle task Review me hona chahiye'};
-  return {ok:true};
-}
-window.moveTask=async (id,status)=>{
-  const t=state.tasks.find(x=>x.id===id); const check=canMoveTask(t,status); if(!check.ok) return toast(check.msg);
-  const extra={status,updatedAt:serverTimestamp(),lastUpdatedBy:state.role, history:[...(t.history||[]), historyItem(`Status moved to ${statusLabel(status)}`)]};
-  if(status==='progress' && !t.startedAt) extra.startedAt=serverTimestamp();
-  if(status==='review') extra.reviewAt=serverTimestamp();
-  if(status==='complete') { const review=await modalForm({title:'Approve Task & Give Rating',submitText:'Approve Complete',fields:[{name:'rating',label:'Rating 1-5',type:'select',value:'5',options:['5','4','3','2','1']},{name:'reviewComment',label:'Admin Review Comment',type:'textarea',value:'Approved',required:true}]}); if(!review)return; extra.completedAt=serverTimestamp(); extra.completedDate=today(); extra.completedMonth=currentMonth(); extra.completedBy='admin'; const rating=String(Math.max(1,Math.min(5,Number(review.rating)||5))); const reviewComment=review.reviewComment||'Approved'; extra.rating=rating; extra.points=pointsForRating(rating); extra.reviewComment=reviewComment; extra.history.push(historyItem(`Approved with ${rating} star rating (${extra.points} points): ${reviewComment}`,'Admin')); }
-  await updateDoc(doc(db,'tasks',id),extra); await logActivity(t.empId,`Task ${t.taskCode} moved to ${statusLabel(status)}`,'task'); toast(status==='complete'?'Task approved and completed':'Task updated'); await refresh();
-};
-function initKanbanDnd(){
-  $$('.task-card[draggable="true"]').forEach(card=>{
-    card.ondragstart=e=>{ e.dataTransfer.setData('text/plain', card.dataset.taskId); setTimeout(()=>card.classList.add('dragging'),0); };
-    card.ondragend=()=>card.classList.remove('dragging');
-  });
-  $$('.drop-zone').forEach(zone=>{
-    zone.ondragover=e=>{ e.preventDefault(); zone.classList.add('drag-over'); };
-    zone.ondragleave=()=>zone.classList.remove('drag-over');
-    zone.ondrop=async e=>{ e.preventDefault(); zone.classList.remove('drag-over'); const id=e.dataTransfer.getData('text/plain'); const status=zone.dataset.status; const t=state.tasks.find(x=>x.id===id); if(!t || t.status===status) return; await window.moveTask(id,status); };
-  });
-}
-window.addTaskNote=async id=>{ const t=state.tasks.find(x=>x.id===id); if(!t)return; const data=await modalForm({title:'Add Task Comment',submitText:'Add Comment',fields:[{name:'note',label:'Comment / Update',type:'textarea',required:true,placeholder:'Write your update...'}]}); if(!data?.note)return; const notes=[...(t.notes||[]),{by:state.employee?.name||'Admin',note:data.note,time:nowTime(),date:today()}]; await updateDoc(doc(db,'tasks',id),{notes,updatedAt:serverTimestamp()}); await logActivity(t.empId,`Task note added: ${t.taskCode}`,'task'); toast('Note added'); await refresh(); };
-window.editTask=async id=>{ const t=state.tasks.find(x=>x.id===id); if(!t)return; const data=await modalForm({title:'Edit Task',submitText:'Update Task',fields:[{name:'title',label:'Task Title',value:t.title||'',required:true},{name:'business',label:'Business',type:'select',value:t.business||'SBX Media',options:['SBX Media','SIA Jewels','YOLOX Fashion','Personal']},{name:'department',label:'Department',type:'select',value:t.department||'',options:state.departments.map(d=>d.name)},{name:'empId',label:'Assigned Employee',type:'select',value:t.empId||'',options:state.employees.map(e=>({value:e.empId,label:`${e.name} (${e.empId})`}))},{name:'priority',label:'Priority',type:'select',value:t.priority||'Medium',options:['Low','Medium','High','Urgent']},{name:'dueDate',label:'Due Date',type:'date',value:t.dueDate||''},{name:'estimatedHours',label:'Estimated Hours',type:'number',value:t.estimatedHours||''},{name:'referenceLink',label:'Reference Link',type:'url',value:t.referenceLink||'',placeholder:'Google Drive / Canva / Figma link'},{name:'description',label:'Description',type:'textarea',value:t.description||''}]}); if(!data)return; await updateDoc(doc(db,'tasks',id),{...data,updatedAt:serverTimestamp(),history:[...(t.history||[]),historyItem('Task details edited','Admin')]}); await logActivity(data.empId||t.empId,`Task edited: ${t.taskCode}`,'task'); toast('Task edited'); await refresh(); };
-window.deleteTask=async id=>{ const t=state.tasks.find(x=>x.id===id); const ok=await modalConfirm({title:'Delete Task',message:`${t?.taskCode||'Task'} delete karna hai?`,confirmText:'Delete Task',danger:true}); if(ok){await deleteDoc(doc(db,'tasks',id)); await logActivity(t.empId,`Task deleted: ${t.taskCode}`,'task'); toast('Task deleted'); await refresh();} };
-
-
-window.viewTask=(id)=>{ const t=state.tasks.find(x=>x.id===id); if(!t)return; const modal=document.createElement('div'); modal.className='modal-backdrop'; modal.innerHTML=`<div class="modal-card"><button class="modal-close" onclick="this.closest('.modal-backdrop').remove()">×</button><h2>${esc(t.taskCode)} — ${esc(t.title)}</h2><div class="task-meta"><span class="status ${priorityClass(t.priority)}">${esc(t.priority)}</span><span class="mini">${esc(t.business)}</span><span class="mini">${esc(t.department)}</span><span class="mini">Assigned: ${esc(empName(t.empId))}</span><span class="mini">Due: ${dateNice(t.dueDate)}</span>${ratingHTML(t)}</div><p class="notice">${esc(t.description||'No description')}</p><div class="modal-grid"><div><h3>Reference Link</h3>${linkHTML(t.referenceLink)}</div><div><h3>Rating & Points</h3>${t.rating?`<div class="score-box"><b>${esc(t.rating)}/5 ⭐</b><span>${pointsForRating(t.rating)} Points</span><p>${esc(t.reviewComment||'')}</p></div>`:'<p class="muted-small">Task complete hone ke baad admin rating dega.</p>'}</div></div><div class="modal-grid"><div><h3>Comments</h3>${commentsHTML(t)}<button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Add Comment</button></div><div><h3>Timeline</h3>${taskHistoryHTML(t)}</div></div></div>`; document.body.appendChild(modal); };
-window.requestRevision=async(id)=>{ const t=state.tasks.find(x=>x.id===id); if(!t)return; const data=await modalForm({title:'Request Revision',submitText:'Send Back To Progress',fields:[{name:'note',label:'Revision Note / Changes Needed',type:'textarea',required:true,placeholder:'Example: logo size increase karo, color change karo...'}]}); if(!data?.note)return; await updateDoc(doc(db,'tasks',id),{status:'progress',revisionNote:data.note,history:[...(t.history||[]),historyItem(`Revision requested: ${data.note}`,'Admin')],updatedAt:serverTimestamp()}); await logActivity(t.empId,`Revision requested: ${t.taskCode}`,'task'); toast('Task sent back to Progress'); await refresh(); };
-window.startWork=async(id)=>{ const t=state.tasks.find(x=>x.id===id); await updateDoc(doc(db,'tasks',id),{activeTimerStart:Date.now(),history:[...(t.history||[]),historyItem('Work timer started')],updatedAt:serverTimestamp()}); toast('Timer started'); await refresh(); };
-window.stopWork=async(id)=>{ const t=state.tasks.find(x=>x.id===id); if(!t?.activeTimerStart)return; const mins=Math.max(1,Math.round((Date.now()-Number(t.activeTimerStart))/60000)); const logs=[...(t.timeLogs||[]),{start:t.activeTimerStart,end:Date.now(),minutes:mins,by:state.employee?.name||'Employee'}]; await updateDoc(doc(db,'tasks',id),{activeTimerStart:null,timeLogs:logs,actualMinutes:Number(t.actualMinutes||0)+mins,history:[...(t.history||[]),historyItem(`Work timer stopped: ${fmtHours(mins)}`)],updatedAt:serverTimestamp()}); toast(`Timer saved: ${fmtHours(mins)}`); await refresh(); };
-function attendanceView(){
-  $('#attendanceView').innerHTML = `<div class="card"><h3>Attendance Records</h3><div class="table-wrap"><table class="table"><tr><th>Date</th><th>Employee</th><th>Entry</th><th>Break</th><th>Exit</th><th>Status</th><th>Late</th><th>Work Hours</th><th>OT</th></tr>${state.attendance.slice().reverse().map(r=>`<tr><td>${r.date}</td><td>${esc(empName(r.empId))}</td><td>${r.entry||'-'}</td><td>${r.breakStart||'-'} / ${r.breakEnd||'-'}</td><td>${r.exit||'-'}</td><td><span class="status ${String(r.status).toLowerCase()}">${r.status}</span></td><td>${isLate(r)?'Yes':'No'}</td><td>${recWorkHours(r)}</td><td>${overtime(r)}</td></tr>`).join('')}</table></div></div>`;
-}
-function leaveTypeText(l){ return l.finalType ? l.finalType : (l.status||'pending'); }
-async function setAttendanceForLeave(l, approve=true){
-  const emp=state.employees.find(e=>e.empId===l.empId); let paidUsed=approvedLeaveDays(l.empId, monthKey(l.fromDate), true);
-  for(const d of daysBetween(l.fromDate,l.toDate)){
-    if(isSundayDate(d)) continue;
-    const paidLimit=employeePaidLimit(emp); const status = approve ? (paidUsed < paidLimit ? 'Leave' : 'Absent') : 'Rejected';
-    if(status==='Leave') paidUsed++;
-    const old=state.attendance.find(a=>a.empId===l.empId && a.date===d);
-    const data={empId:l.empId,date:d,status,leaveRequestId:l.id,leaveReason:l.reason||'',updatedAt:serverTimestamp()};
-    if(old) await updateDoc(doc(db,'attendance',old.id),data); else await addDoc(collection(db,'attendance'),data);
+  const s = await getDocs(collection(db, "settings"));
+  if (s.empty) {
+    await setDoc(doc(db, "settings", "office"), {
+      officeStart: "10:00", officeEnd: "19:00", graceMinutes: 10, breakMinutes: 45, defaultPaidLeave: 2,
+      weeklyOff: "Sunday", announcement: "Welcome to Office Attendance System", companyLogo: "",
+      goodRatingMin: 4, bonusMinTasks: 10, bonusAmount: 1000, eomBonus: 1000, employeeOfMonthId: ""
+    });
   }
 }
-function requestsView(){
-  const leaves = state.leaveRequests.slice().sort((a,b)=>String(b.createdAt||b.createdDate||'').localeCompare(String(a.createdAt||a.createdDate||'')));
-  const messages = state.activity.filter(a=>a.type==='message').slice().reverse();
-  $('#requestsView').innerHTML = `<div class="card"><h3>Leave Requests</h3><div class="table-wrap"><table class="table"><tr><th>Employee</th><th>From</th><th>To</th><th>Reason</th><th>Status</th><th>Paid Limit</th><th>Used</th><th>Action</th></tr>${leaves.map(l=>{const emp=state.employees.find(e=>e.empId===l.empId);return `<tr><td>${avatarHTML(emp,true)} ${esc(empName(l.empId))}</td><td>${esc(l.fromDate||'-')}</td><td>${esc(l.toDate||l.fromDate||'-')}</td><td>${esc(l.reason||'-')}</td><td><span class="status ${String(l.status||'pending')}">${esc(leaveTypeText(l))}</span></td><td>${employeePaidLimit(emp)}</td><td>${approvedLeaveDays(l.empId, monthKey(l.fromDate||today()))}</td><td>${l.status==='pending'?`<button class="primary-btn" onclick="window.approveLeave('${l.id}')">Approve</button> <button class="danger-btn" onclick="window.rejectLeave('${l.id}')">Reject</button>`:'-'}</td></tr>`}).join('')||'<tr><td colspan="8">No leave requests</td></tr>'}</table></div></div><div class="card"><h3>Messages</h3>${messages.map(a=>`<div class="timeline-item"><b>${a.date}</b><span>${esc(empName(a.empId))}: ${esc(a.text)}</span></div>`).join('')||'<p>No messages yet</p>'}</div>`;
-}
-window.approveLeave=async id=>{ const l=state.leaveRequests.find(x=>x.id===id); if(!l)return; await setAttendanceForLeave(l,true); await updateDoc(doc(db,'leave_requests',id),{status:'approved',approvedAt:serverTimestamp(),approvedDate:today()}); await logActivity(l.empId,`Leave approved: ${l.fromDate} to ${l.toDate||l.fromDate}`,'leave'); toast('Leave approved'); await refresh(); };
-window.rejectLeave=async id=>{ const l=state.leaveRequests.find(x=>x.id===id); if(!l)return; const data=await modalForm({title:'Reject Leave Request',submitText:'Reject Leave',fields:[{name:'note',label:'Reject Reason',type:'textarea',value:'Not approved',required:true}]}); if(!data)return; const note=data.note||'Not approved'; await updateDoc(doc(db,'leave_requests',id),{status:'rejected',adminNote:note,rejectedAt:serverTimestamp()}); await logActivity(l.empId,`Leave rejected: ${note}`,'leave'); toast('Leave rejected'); await refresh(); };
-function payrollView(){
-  const m=currentMonth();
-  const rows = state.employees.map(e=>({e, p: payrollCalc(e,m), pts: monthlyTaskPoints(e.empId,m), lb: leaveBalance(e,m)}));
-  const totalBase=rows.reduce((a,x)=>a+x.p.salary,0), totalBonus=rows.reduce((a,x)=>a+x.p.bonus,0), totalDed=rows.reduce((a,x)=>a+x.p.deduction,0), totalNet=rows.reduce((a,x)=>a+x.p.net,0);
-  const completedRows = state.tasks.filter(t=>t.status==='complete' && taskMonth(t)===m).sort((a,b)=>String(b.completedDate||'').localeCompare(String(a.completedDate||'')));
-  const eom=employeeOfMonth(m);
-  $('#payrollView').innerHTML = `<div class="grid cards kpi-cards"><div class="card stat kpi green"><div><p>Total Base Salary</p><h3>${money(totalBase)}</h3><small>Monthly fixed salary</small></div><span class="kpi-icon">💰</span></div><div class="card stat kpi blue"><div><p>This Month Bonus</p><h3>${money(totalBonus)}</h3><small>Performance + EOM bonus</small></div><span class="kpi-icon">🎁</span></div><div class="card stat kpi purple"><div><p>Leave Deduction</p><h3>${money(totalDed)}</h3><small>Extra leave / absent</small></div><span class="kpi-icon">📉</span></div><div class="card stat kpi orange"><div><p>Net Payable</p><h3>${money(totalNet)}</h3><small>Salary payable</small></div><span class="kpi-icon">🧾</span></div></div><div class="card"><h3>Payroll Dashboard — ${esc(m)}</h3><p class="notice">Bonus rule: minimum ${esc(state.settings.bonusMinTasks||10)} completed tasks with ${esc(state.settings.bonusMinRating||4)}⭐ or above = ${money(state.settings.performanceBonus||1000)}. Employee of the Month: ${eom?esc(eom.name)+' gets '+money(eomBonusAmount()):'not selected'}.</p><div class="table-wrap"><table class="table"><tr><th>Employee</th><th>Department</th><th>Base Salary</th><th>Good Tasks</th><th>Performance Bonus</th><th>EOM Bonus</th><th>Extra Leave</th><th>Deduction</th><th>Net Salary</th><th>Points</th></tr>${rows.map(x=>`<tr><td>${avatarHTML(x.e,true)} ${esc(x.e.name)} ${isEmployeeOfMonth(x.e.empId,m)?'<span class="mini rating-pill">🏆 EOM</span>':''}</td><td>${esc(x.e.department||'-')}</td><td>${money(x.p.salary)}</td><td>${x.p.goodTasks}/${x.p.minTasks} (${x.p.minRating}⭐+)</td><td><span class="status ${x.p.bonusEligible?'complete':'todo'}">${money(x.p.performanceBonus)}</span></td><td><span class="status ${x.p.eomBonus?'complete':'todo'}">${money(x.p.eomBonus)}</span></td><td>${x.lb.extra}</td><td><span class="status absent">- ${money(x.p.deduction)}</span></td><td><b>${money(x.p.net)}</b></td><td>${x.pts}</td></tr>`).join('') || '<tr><td colspan="10">No employees</td></tr>'}</table></div></div><div class="card"><h3>Employee Leave Balance — ${esc(m)}</h3><div class="table-wrap"><table class="table"><tr><th>Employee</th><th>Paid Leave Limit</th><th>Used Paid Leave</th><th>Balance</th><th>Extra Leave / Absent</th><th>Status</th></tr>${rows.map(x=>`<tr><td>${avatarHTML(x.e,true)} ${esc(x.e.name)}</td><td>${x.lb.paid}</td><td>${x.lb.used}</td><td><b>${x.lb.balance}</b></td><td>${x.lb.extra}</td><td><span class="status ${x.lb.extra>0?'absent':'complete'}">${x.lb.extra>0?'Extra leave':'OK'}</span></td></tr>`).join('')||'<tr><td colspan="6">No employees</td></tr>'}</table></div></div><div class="card"><div class="section-head"><div><h3>Completed Task History — ${esc(m)}</h3><p class="muted-small">Admin approved task yaha monthly list me save rahega. Month change hone par current list fresh dikhegi, purani list export ke liye Firestore me rahegi.</p></div><button class="primary-btn" onclick="window.exportCompletedTasks()">Export Excel CSV</button></div><div class="table-wrap"><table class="table"><tr><th>Date</th><th>Task Code</th><th>Task</th><th>Employee</th><th>Business</th><th>Department</th><th>Rating</th><th>Points</th><th>Admin Review</th></tr>${completedRows.map(t=>`<tr><td>${esc(t.completedDate||'-')}</td><td>${esc(t.taskCode||'-')}</td><td>${esc(t.title||'-')}</td><td>${esc(empName(t.empId))}</td><td>${esc(t.business||'-')}</td><td>${esc(t.department||'-')}</td><td>${esc(t.rating||'-')}/5</td><td>${esc(t.points||pointsForRating(t.rating))}</td><td>${esc(t.reviewComment||'')}</td></tr>`).join('') || '<tr><td colspan="9">No completed tasks this month</td></tr>'}</table></div></div>`;
-}
-<button onclick="exportCompletedTasks()">Export Excel CSV</button></div><div class="table-wrap"><table class="table"><tr><th>Date</th><th>Task Code</th><th>Task</th><th>Employee</th><th>Business</th><th>Department</th><th>Rating</th><th>Points</th><th>Admin Review</th></tr>${completedRows.map(t=>`<tr><td>${esc(t.completedDate||'-')}</td><td>${esc(t.taskCode||'-')}</td><td>${esc(t.title||'-')}</td><td>${esc(empName(t.empId))}</td><td>${esc(t.business||'-')}</td><td>${esc(t.department||'-')}</td><td>${esc(t.rating||'-')}/5</td><td>${esc(t.points||pointsForRating(t.rating))}</td><td>${esc(t.reviewComment||'')}</td></tr>`).join('') || '<tr><td colspan="9">No completed tasks this month</td></tr>'}</table></div></div>`;
-}
-window.exportCompletedTasks=()=>{
-  const m=currentMonth();
-  const rows=state.tasks.filter(t=>t.status==='complete' && taskMonth(t)===m).sort((a,b)=>String(a.completedDate||'').localeCompare(String(b.completedDate||'')));
-  const headers=['Date','Task Code','Task Title','Employee','Business','Department','Priority','Rating','Points','Admin Review','Completed Month'];
-  const csv=[headers, ...rows.map(t=>[t.completedDate||'',t.taskCode||'',t.title||'',empName(t.empId),t.business||'',t.department||'',t.priority||'',t.rating||'',t.points||pointsForRating(t.rating),t.reviewComment||'',taskMonth(t)])].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`completed-tasks-${m}.csv`; a.click(); URL.revokeObjectURL(a.href);
-  toast('Completed task list exported');
-};
-function settingsView(){
-  const empOpts = `<option value="">Auto / Not selected</option>` + state.employees.map(e=>`<option value="${esc(e.empId)}" ${state.settings.employeeOfMonthId===e.empId?'selected':''}>${esc(e.name)} (${esc(e.empId)})</option>`).join('');
-  $('#settingsView').innerHTML = `<form id="settingsForm" class="settings-grid"><div class="card settings-card"><h3>Office Timing</h3><p class="muted-small">Yaha office start/end aur break rules set karo.</p><label>Office Start Time<input name="start" value="${esc(state.settings.start||'10:00')}" placeholder="10:00"></label><label>Office End Time<input name="end" value="${esc(state.settings.end||'19:00')}" placeholder="19:00"></label><label>Grace Minutes<input name="graceMinutes" type="number" value="${esc(state.settings.graceMinutes||10)}" placeholder="10"></label><label>Break Minutes<input name="breakMinutes" type="number" value="${esc(state.settings.breakMinutes||45)}" placeholder="45"></label></div><div class="card settings-card"><h3>Leave Rules</h3><p class="muted-small">Sunday automatic leave rahega. Extra approved leave absent count hoga.</p><label>Default Paid Leave / Month<input name="monthlyLeaves" type="number" value="${esc(state.settings.monthlyLeaves||2)}" placeholder="2"></label><label>Weekly Off<input name="weekend" value="${esc(state.settings.weekend||'Sunday')}" placeholder="Sunday"></label><label>Payroll Working Days<input name="workingDays" type="number" value="${esc(state.settings.workingDays||26)}" placeholder="26"></label></div><div class="card settings-card"><h3>Payroll Bonus Rule</h3><p class="muted-small">Good rating tasks target complete hone par monthly bonus milega.</p><label>Minimum Good Rating<input name="bonusMinRating" type="number" min="1" max="5" step="1" value="${esc(state.settings.bonusMinRating||4)}" placeholder="4"></label><label>Minimum Good Rated Tasks<input name="bonusMinTasks" type="number" min="0" value="${esc(state.settings.bonusMinTasks||10)}" placeholder="10"></label><label>Monthly Bonus Amount ₹<input name="performanceBonus" type="number" min="0" value="${esc(state.settings.performanceBonus||1000)}" placeholder="1000"></label></div><div class="card settings-card"><h3>Employee of the Month</h3><p class="muted-small">Admin yaha employee select karega. Selected employee ko payroll me extra bonus milega.</p><label>Select Employee<select name="employeeOfMonthId">${empOpts}</select></label><label>EOM Extra Bonus ₹<input name="employeeMonthBonus" type="number" min="0" value="${esc(state.settings.employeeMonthBonus||1000)}" placeholder="1000"></label><label>Company Logo URL<input name="logoUrl" value="${esc(state.settings.logoUrl||'')}" placeholder="https://..."></label></div><div class="card settings-card wide"><h3>Announcement</h3><p class="muted-small">Admin dashboard par show hoga.</p><label>Announcement Message<textarea name="announcement" placeholder="Announcement">${esc(state.settings.announcement||'')}</textarea></label><button class="primary-btn">Save Settings</button></div></form>`;
-  $('#settingsForm').onsubmit=async e=>{e.preventDefault(); const data=Object.fromEntries(new FormData(e.target)); await setDoc(doc(db,'settings','office'),data,{merge:true}); toast('Settings saved'); await refresh();};
-}
-function employeeDashboard(){
-  const my=state.employee.empId; const rec=todayRecords().find(a=>a.empId===my); const tasks=state.tasks.filter(t=>t.empId===my);
-  const eomBlock = isEmployeeOfMonth(my) ? `<div class="card eom-card employee-only"><div class="eom-left">${avatarHTML(state.employee)}<div><h3>🏆 Congratulations!</h3><h2>You are Employee of the Month</h2><p>Extra bonus: ${money(eomBonusAmount())}</p></div></div></div>` : '';
-  $('#employeeDashboard').innerHTML = `${eomBlock}<div class="grid cards kpi-cards"><div class="card stat kpi green"><div><p>Today Status</p><h3>${rec?.status||'Absent'}</h3><small>Attendance</small></div><span class="kpi-icon">✅</span></div><div class="card stat kpi blue"><div><p>My Tasks</p><h3>${tasks.length}</h3><small>Total assigned</small></div><span class="kpi-icon">📋</span></div><div class="card stat kpi purple"><div><p>In Progress</p><h3>${tasks.filter(t=>t.status==='progress').length}</h3><small>Currently working</small></div><span class="kpi-icon">⏱️</span></div><div class="card stat kpi orange"><div><p>This Month Points</p><h3>${monthlyTaskPoints(my)}</h3><small>Rating based</small></div><span class="kpi-icon">⭐</span></div></div><div class="grid two" style="margin-top:18px"><div class="card"><h3>Attendance Actions</h3><div class="actions"><button class="primary-btn" onclick="window.markAttendance('entry')">Entry</button><button class="ghost-btn" onclick="window.markAttendance('breakStart')">Break Start</button><button class="ghost-btn" onclick="window.markAttendance('breakEnd')">Break End</button><button class="danger-btn" onclick="window.markAttendance('exit')">Exit</button></div><p class="notice">Entry: ${rec?.entry||'-'} | Break: ${rec?.breakStart||'-'} / ${rec?.breakEnd||'-'} | Exit: ${rec?.exit||'-'}</p></div><div class="card"><h3>Due Today / Review</h3>${tasks.filter(t=>t.dueDate===today()||t.status==='review').map(t=>taskCard(t,false)).join('')||'<p>No due task today</p>'}</div></div>`;
-}
-window.markAttendance=async type=>{ const emp=state.employee.empId; const rec=state.attendance.find(a=>a.empId===emp && a.date===today()); const data={empId:emp,date:today(),updatedAt:serverTimestamp()}; if(type==='entry'){data.entry=nowTime();data.status='Present'} if(type==='breakStart'){data.breakStart=nowTime();data.status='Break'} if(type==='breakEnd'){data.breakEnd=nowTime();data.status='Present'} if(type==='exit'){data.exit=nowTime();data.status='Exited'} if(rec) await updateDoc(doc(db,'attendance',rec.id),data); else await addDoc(collection(db,'attendance'),data); await logActivity(emp, type.replace(/([A-Z])/g,' $1'),'attendance'); toast('Attendance updated'); await refresh(); };
-function employeeTasksView(){
-  const tasks=state.tasks.filter(t=>t.empId===state.employee.empId).filter(t=>(empTaskFilters.business==='All'||t.business===empTaskFilters.business) && (empTaskFilters.status==='All'||t.status===empTaskFilters.status) && (!empTaskFilters.search||String(t.title+t.taskCode+t.description).toLowerCase().includes(empTaskFilters.search.toLowerCase())));
-  $('#employeeTasksView').innerHTML = `<div class="card"><h3>My Trello Style Task Board</h3><div class="filter-row"><select id="empFilterBusiness"><option>All</option><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select id="empFilterStatus"><option>All</option><option value="todo">To Do</option><option value="progress">In Progress</option><option value="review">Review</option><option value="complete">Completed</option></select><input id="empFilterSearch" placeholder="Search my task"><button id="empClearFilters" class="ghost-btn">Clear</button></div>${kanbanBoard(tasks,false)}</div>`;
-  $('#empFilterBusiness').value=empTaskFilters.business; $('#empFilterStatus').value=empTaskFilters.status; $('#empFilterSearch').value=empTaskFilters.search;
-  $('#empFilterBusiness').onchange=e=>{empTaskFilters.business=e.target.value;employeeTasksView()}; $('#empFilterStatus').onchange=e=>{empTaskFilters.status=e.target.value;employeeTasksView()}; $('#empFilterSearch').oninput=e=>{empTaskFilters.search=e.target.value;employeeTasksView()}; $('#empClearFilters').onclick=()=>{empTaskFilters={business:'All',status:'All',search:''};employeeTasksView()};
-  initKanbanDnd();
-}
-function employeeSummaryView(){
-  const my=state.employee.empId; const rows=state.attendance.filter(a=>a.empId===my); const tasks=state.tasks.filter(t=>t.empId===my); const completed=tasks.filter(t=>t.status==='complete' && taskMonth(t)===currentMonth()); const points=monthlyTaskPoints(my,currentMonth()); const lb=leaveBalance(state.employee,currentMonth()); const leaveUsed=lb.used; const paidLimit=lb.paid; const avg=completed.length?(completed.reduce((s,t)=>s+Number(t.rating||0),0)/completed.length).toFixed(1):'--'; const pay=payrollCalc(state.employee,currentMonth());
-  $('#employeeSummaryView').innerHTML = `<div class="grid cards"><div class="card stat"><p>Total Days</p><h3>${rows.length}</h3></div><div class="card stat"><p>Completed This Month</p><h3>${completed.length}</h3></div><div class="card stat"><p>This Month Points</p><h3>${points}</h3></div><div class="card stat"><p>Leaves Used</p><h3>${leaveUsed}/${paidLimit}</h3></div><div class="card stat"><p>Average Rating</p><h3>${avg} ⭐</h3></div><div class="card stat"><p>Bonus Status</p><h3>${pay.goodTasks}/${pay.minTasks}</h3></div></div><div class="card"><h3>My Payroll & Leave Balance</h3><p class="notice">Bonus rule: is month ${pay.minRating}⭐ ya usse upar ${pay.minTasks} tasks complete hone par ${money(pay.bonusAmount)} bonus. Employee of Month bonus: ${isEmployeeOfMonth(my)?money(pay.eomBonus):'Not selected'}. Leave balance: ${lb.balance} left, ${lb.used} used, ${lb.extra} extra.</p></div><div class="card"><div class="section-head"><div><h3>My Completed Task History — ${esc(currentMonth())}</h3><p class="muted-small">Month change hone par current list fresh dikhegi.</p></div><button class="primary-btn" onclick="window.exportMyCompletedTasks()">Export Excel CSV</button></div><div class="table-wrap"><table class="table"><tr><th>Date</th><th>Task Code</th><th>Task</th><th>Business</th><th>Department</th><th>Rating</th><th>Points</th><th>Review</th></tr>${completed.map(t=>`<tr><td>${esc(t.completedDate||'-')}</td><td>${esc(t.taskCode||'-')}</td><td>${esc(t.title||'-')}</td><td>${esc(t.business||'-')}</td><td>${esc(t.department||'-')}</td><td>${esc(t.rating||'-')}/5</td><td>${Number(t.points||pointsForRating(t.rating))}</td><td>${esc(t.reviewComment||'')}</td></tr>`).join('')||'<tr><td colspan="8">No completed task this month</td></tr>'}</table></div></div><div class="card"><h3>Monthly Graph</h3><div class="chart">${rows.slice(-20).map(r=>`<div class="bar" style="height:${r.exit?120:60}px" title="${r.date}"></div>`).join('')}</div></div>`;
-}
-window.exportMyCompletedTasks=()=>{
-  const m=currentMonth();
-  const rows=state.tasks.filter(t=>t.empId===state.employee?.empId && t.status==='complete' && taskMonth(t)===m).sort((a,b)=>String(a.completedDate||'').localeCompare(String(b.completedDate||'')));
-  const headers=['Date','Task Code','Task Title','Business','Department','Priority','Rating','Points','Admin Review','Completed Month'];
-  const csv=[headers, ...rows.map(t=>[t.completedDate||'',t.taskCode||'',t.title||'',t.business||'',t.department||'',t.priority||'',t.rating||'',t.points||pointsForRating(t.rating),t.reviewComment||'',taskMonth(t)])].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`my-completed-tasks-${m}.csv`; a.click(); URL.revokeObjectURL(a.href);
-  toast('My completed task list exported');
-};
-function employeeMessageView(){
-  const myLeaves=state.leaveRequests.filter(l=>l.empId===state.employee.empId).slice().reverse();
-  $('#employeeMessageView').innerHTML = `<div class="grid two"><div class="card"><h3>Send Message</h3><form id="msgForm" class="form-grid"><input name="subject" placeholder="Subject"><textarea name="text" placeholder="Write message to admin" required></textarea><button class="primary-btn">Send Message</button></form></div><div class="card"><h3>Leave Request</h3><form id="leaveForm" class="form-grid"><input name="fromDate" type="date" required><input name="toDate" type="date"><textarea name="reason" placeholder="Why do you need leave?" required></textarea><button class="primary-btn">Request Leave</button></form><p class="notice">This month leave used: ${approvedLeaveDays(state.employee.empId)}/${employeePaidLimit(state.employee)} paid leaves. Sunday automatic leave hai, absent count nahi hoga.</p></div></div><div class="card"><h3>My Leave Requests</h3><div class="table-wrap"><table class="table"><tr><th>From</th><th>To</th><th>Reason</th><th>Status</th><th>Admin Note</th></tr>${myLeaves.map(l=>`<tr><td>${esc(l.fromDate)}</td><td>${esc(l.toDate||l.fromDate)}</td><td>${esc(l.reason)}</td><td><span class="status ${String(l.status)}">${esc(l.status)}</span></td><td>${esc(l.adminNote||'-')}</td></tr>`).join('')||'<tr><td colspan="5">No leave request</td></tr>'}</table></div></div>`;
-  $('#msgForm').onsubmit=async ev=>{ev.preventDefault(); const d=Object.fromEntries(new FormData(ev.target)); await logActivity(state.employee.empId,`${d.subject?d.subject+': ':''}${d.text}`,'message'); toast('Message sent'); ev.target.reset();};
-  $('#leaveForm').onsubmit=async ev=>{ev.preventDefault(); const d=Object.fromEntries(new FormData(ev.target)); if(!d.toDate)d.toDate=d.fromDate; await addDoc(collection(db,'leave_requests'),{empId:state.employee.empId,fromDate:d.fromDate,toDate:d.toDate,reason:d.reason,status:'pending',createdDate:today(),createdTime:nowTime(),createdAt:serverTimestamp()}); await logActivity(state.employee.empId,`Leave requested: ${d.fromDate} to ${d.toDate}`,'leave'); toast('Leave request sent'); ev.target.reset(); await refresh();};
+
+async function startApp() {
+  ensureStyles();
+  await seedDefaults();
+  await loadOnce();
+  subscribeData();
+  renderShell();
 }
 
+function navItems() {
+  if (state.role === "employee") return ["dashboard", "tasks", "attendance", "requests", "payroll", "history"];
+  return ["dashboard", "employees", "departments", "tasks", "attendance", "requests", "payroll", "settings"];
+}
 
-setInterval(()=>{ if(!$('#app').classList.contains('hidden')) refresh(); }, 60000);
+function viewTitle(v) { return ({ dashboard: "Dashboard", employees: "Employees", departments: "Departments", tasks: "Tasks", attendance: "Attendance", requests: "Requests", payroll: "Payroll", settings: "Settings", history: "Completed History" }[v] || v); }
+
+function renderShell() {
+  const nav = navItems().map((v) => `<button data-view="${v}" class="${state.activeView === v ? "active" : ""}">${viewTitle(v)}</button>`).join("");
+  document.body.innerHTML = `<div class="app"><aside class="sidebar"><div class="side-brand"><div class="logo">OA</div><span>Office System</span></div><nav class="nav">${nav}</nav><button class="btn logout">Logout</button></aside><main class="main"><div class="topbar"><div><div class="breadcrumb">Portal › ${viewTitle(state.activeView)}</div><h2>Good morning ${state.role === "admin" ? "Admin" : esc(currentEmployee()?.name || "Employee")}</h2></div><div class="pills"><span class="pill">${new Date().toDateString()}</span><span class="pill">${state.role === "admin" ? "Admin" : "Employee"}</span>${profileAvatar()}</div></div><div id="view"></div></main></div>`;
+  document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { state.activeView = b.dataset.view; renderShell(); });
+  $(".logout").onclick = () => { localStorage.removeItem("oas_role"); localStorage.removeItem("oas_userId"); state.unsub.forEach((u) => u()); renderLogin(); };
+  renderView();
+}
+
+function profileAvatar(emp = currentEmployee()) {
+  if (state.role === "admin") return `<div class="avatar">A</div>`;
+  if (emp?.photoUrl) return `<img class="avatar" src="${esc(emp.photoUrl)}" alt="profile">`;
+  return `<div class="avatar">${esc((emp?.name || "E").slice(0, 1).toUpperCase())}</div>`;
+}
+function currentEmployee() { return state.employees.find((e) => e.id === state.userId); }
+function renderView() {
+  if (!$("#view")) return;
+  const map = { dashboard: dashboardView, employees: employeesView, departments: departmentsView, tasks: tasksView, attendance: attendanceView, requests: requestsView, payroll: payrollView, settings: settingsView, history: completedHistoryView };
+  $("#view").innerHTML = (map[state.activeView] || dashboardView)();
+  bindViewActions();
+}
+
+function monthlyTasks(empId = null, m = currentMonth()) {
+  return state.tasks.filter((t) => (!empId || t.empId === empId) && (monthKey(t.completedDate || t.updatedAt || t.createdAt || todayISO()) === m));
+}
+function completedTasks(empId = null, m = currentMonth()) {
+  return monthlyTasks(empId, m).filter((t) => t.status === "complete");
+}
+function monthlyTaskPoints(empId = null, m = currentMonth()) {
+  return completedTasks(empId, m).reduce((sum, t) => sum + Number(t.points || pointsForRating(t.rating)), 0);
+}
+function goodRatedTaskCount(empId, m = currentMonth()) {
+  return completedTasks(empId, m).filter((t) => Number(t.rating || 0) >= goodRatingMin()).length;
+}
+function leaveBalance(emp, m = currentMonth()) {
+  const paidLimit = Number(emp?.paidLeave ?? state.settings.defaultPaidLeave ?? 2);
+  const approved = state.leaves.filter((l) => l.empId === emp?.id && l.status === "approved" && monthKey(l.fromDate || l.date || todayISO()) === m);
+  const used = approved.reduce((sum, l) => sum + Number(l.days || dateDays(l.fromDate, l.toDate)), 0);
+  const extra = Math.max(0, used - paidLimit);
+  return { paidLimit, used, extra, remaining: Math.max(0, paidLimit - used) };
+}
+function dateDays(from, to) {
+  if (!from) return 1;
+  const a = new Date(`${from}T12:00:00`); const b = new Date(`${to || from}T12:00:00`);
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+}
+function payrollCalc(emp, m = currentMonth()) {
+  const salary = Number(emp.salary || 0);
+  const lb = leaveBalance(emp, m);
+  const perDay = salary / 30;
+  const deduction = Math.round(lb.extra * perDay);
+  const good = goodRatedTaskCount(emp.id, m);
+  const performanceBonus = good >= bonusMinTasks() ? bonusAmount() : 0;
+  const eom = state.settings.employeeOfMonthId === emp.id ? eomBonus() : 0;
+  return { salary, good, performanceBonus, eom, deduction, net: salary + performanceBonus + eom - deduction, lb };
+}
+function employeeOfMonthAuto() {
+  let best = null;
+  state.employees.forEach((e) => {
+    const good = goodRatedTaskCount(e.id);
+    const pts = monthlyTaskPoints(e.id);
+    if (!best || good > best.good || (good === best.good && pts > best.pts)) best = { emp: e, good, pts };
+  });
+  return best?.emp || null;
+}
+
+function dashboardView() {
+  const tdy = todayISO();
+  const present = state.attendance.filter((a) => a.date === tdy && a.status === "present").length;
+  const onBreak = state.attendance.filter((a) => a.date === tdy && a.breakActive).length;
+  const absent = isSunday() ? 0 : Math.max(0, state.employees.length - present - state.leaves.filter((l) => l.status === "approved" && l.fromDate <= tdy && (l.toDate || l.fromDate) >= tdy).length);
+  const done = completedTasks().length;
+  const review = state.tasks.filter((t) => t.status === "review").length;
+  const eom = state.settings.employeeOfMonthId ? empById(state.settings.employeeOfMonthId) : employeeOfMonthAuto();
+  if (state.role === "employee") {
+    const emp = currentEmployee(); const p = payrollCalc(emp); const eomVisible = eom?.id === emp?.id;
+    return `<div class="cards"><div class="card kpi-card green"><p>My Points</p><h3>${monthlyTaskPoints(emp?.id)}</h3><small>This month</small></div><div class="card kpi-card blue"><p>Completed</p><h3>${completedTasks(emp?.id).length}</h3><small>Tasks</small></div><div class="card kpi-card purple"><p>Good Rated</p><h3>${p.good}</h3><small>${goodRatingMin()}★ and above</small></div><div class="card kpi-card orange"><p>Leave Balance</p><h3>${p.lb.remaining}</h3><small>Used ${p.lb.used}, Extra ${p.lb.extra}</small></div></div>${eomVisible ? `<div class="card" style="margin-top:18px"><h3>🏆 Employee of the Month</h3><p>Congratulations ${esc(emp.name)}! Extra bonus ${money(eomBonus())} added in payroll.</p></div>` : ""}<div class="grid two" style="margin-top:18px"><div class="card"><h3>Today Tasks</h3>${taskCards(state.tasks.filter((t) => t.empId === emp?.id && t.status !== "complete").slice(0, 5))}</div><div class="card"><h3>Announcement</h3><p>${esc(state.settings.announcement || "Welcome")}</p></div></div>`;
+  }
+  return `<div class="cards"><div class="card kpi-card green"><p>Total Employees</p><h3>${state.employees.length}</h3><small>Added in system</small></div><div class="card kpi-card blue"><p>Present Today</p><h3>${present}</h3><small>On break ${onBreak}</small></div><div class="card kpi-card purple"><p>Task Review</p><h3>${review}</h3><small>Need admin approval</small></div><div class="card kpi-card orange"><p>Completed</p><h3>${done}</h3><small>This month</small></div></div><div class="grid two" style="margin-top:18px"><div class="card"><div class="section-title"><h3>🏆 Employee of the Month</h3><button class="btn small primary" data-eom-set>Set</button></div>${eom ? `<div class="profile-row">${profileAvatar(eom)}<div><b>${esc(eom.name)}</b><p class="muted">${goodRatedTaskCount(eom.id)} good tasks • ${monthlyTaskPoints(eom.id)} points • Bonus ${money(eomBonus())}</p></div></div>` : `<p class="muted">No employee selected yet.</p>`}</div><div class="card"><h3>Points Leaderboard</h3>${leaderboard()}</div></div><div class="card" style="margin-top:18px"><h3>Department Wise Employees</h3>${departmentEmployeeList()}</div>`;
+}
+function leaderboard() {
+  return state.employees.map((e) => ({ e, pts: monthlyTaskPoints(e.id), good: goodRatedTaskCount(e.id) })).sort((a, b) => b.pts - a.pts).map((x, i) => `<div class="leader"><div class="profile-row">${profileAvatar(x.e)}<div><b>#${i + 1} ${esc(x.e.name)}</b><div class="muted">${x.good} good rated tasks</div></div></div><b>${x.pts} pts</b></div>`).join("") || `<p class="muted">No data</p>`;
+}
+function departmentEmployeeList() {
+  return state.departments.map((d) => {
+    const emps = state.employees.filter((e) => e.department === d.name || e.department === d.id);
+    return `<div class="card" style="margin:10px 0"><div class="dept-card"><h3>${esc(d.name)}</h3><span class="badge blue">${emps.length} employees</span></div>${emps.map((e) => `<div class="emp-mini">${profileAvatar(e)}<b>${esc(e.name)}</b><span class="muted">${esc(e.role || "")}</span></div>`).join("") || `<p class="muted">No employee in this department</p>`}</div>`;
+  }).join("");
+}
+
+function employeesView() {
+  if (state.role !== "admin") return `<div class="card">Access denied</div>`;
+  return `<div class="card"><div class="section-title"><h3>Add Employee</h3></div><form id="empForm" class="form-grid"><input name="name" placeholder="Employee name" required><input name="empId" placeholder="Employee ID" required><input name="password" placeholder="Password" required><select name="department">${deptOptions()}</select><input name="role" placeholder="Role"><input name="phone" placeholder="Phone"><input name="salary" type="number" placeholder="Monthly salary"><input name="paidLeave" type="number" placeholder="Paid leave" value="${esc(state.settings.defaultPaidLeave || 2)}"><input name="photoUrl" placeholder="Profile photo URL"><button class="btn primary">Add Employee</button></form></div><div class="card" style="margin-top:18px"><h3>Employees</h3><div class="table-wrap"><table class="table"><tr><th>Employee</th><th>ID</th><th>Department</th><th>Salary</th><th>Leave</th><th>Points</th><th>Status</th><th>Action</th></tr>${state.employees.map((e) => { const lb = leaveBalance(e); return `<tr><td><div class="profile-row">${profileAvatar(e)}<b>${esc(e.name)}</b></div></td><td>${esc(e.empId)}</td><td>${esc(deptName(e.department))}</td><td>${money(e.salary)}</td><td>${lb.remaining} left / ${lb.used} used / ${lb.extra} extra</td><td>${monthlyTaskPoints(e.id)}</td><td><span class="badge green">${esc(e.status || "Active")}</span></td><td><div class="row-actions"><button class="btn small" data-edit-emp="${e.id}">Edit</button><button class="btn small danger" data-del-emp="${e.id}">Delete</button></div></td></tr>`; }).join("")}</table></div></div>`;
+}
+function deptOptions(selected = "") { return state.departments.map((d) => `<option value="${esc(d.name)}" ${selected === d.name || selected === d.id ? "selected" : ""}>${esc(d.name)}</option>`).join(""); }
+function empOptions(selected = "") { return state.employees.map((e) => `<option value="${e.id}" ${selected === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join(""); }
+
+function departmentsView() {
+  if (state.role !== "admin") return `<div class="card">Access denied</div>`;
+  return `<div class="grid two"><div class="card"><h3>Add Department</h3><form id="deptForm" class="form-grid"><input name="name" placeholder="Department name" required><button class="btn primary">Add Department</button></form></div><div class="card"><h3>Department Wise Employees</h3>${departmentEmployeeList()}</div></div><div class="card" style="margin-top:18px"><h3>Departments</h3>${state.departments.map((d) => `<div class="leader"><b>${esc(d.name)}</b><div class="row-actions"><button class="btn small" data-edit-dept="${d.id}">Edit</button><button class="btn small danger" data-del-dept="${d.id}">Delete</button></div></div>`).join("")}</div>`;
+}
+
+function tasksView() {
+  const tasks = state.role === "employee" ? state.tasks.filter((t) => t.empId === state.userId) : state.tasks;
+  const cols = state.role === "admin" ? ["todo", "progress", "review", "complete"] : ["todo", "progress", "review"];
+  return `${state.role === "admin" ? `<div class="card"><div class="section-title"><h3>Create Task</h3></div><form id="taskForm" class="form-grid"><input name="title" placeholder="Task title" required><select name="business"><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select name="department">${deptOptions()}</select><select name="empId">${empOptions()}</select><select name="priority"><option>Low</option><option>Medium</option><option>High</option><option>Urgent</option></select><input name="dueDate" type="date"><input name="estimatedHours" type="number" placeholder="Estimated hours"><input name="referenceLink" placeholder="Reference link"><textarea name="description" class="wide" placeholder="Description"></textarea><button class="btn primary">Create Task</button></form></div>` : ""}<div class="kanban" style="margin-top:18px">${cols.map((c) => `<div class="column"><h4>${statusLabel(c)} <span>${tasks.filter((t) => (t.status || "todo") === c).length}</span></h4>${taskCards(tasks.filter((t) => (t.status || "todo") === c))}</div>`).join("")}</div>`;
+}
+function statusLabel(s) { return ({ todo: "To Do", progress: "In Progress", review: "Review", complete: "Completed" }[s] || s); }
+function taskCards(list) {
+  return list.map((t) => `<div class="task-card"><div class="task-meta"><span class="badge">${esc(t.taskCode || "-")}</span><span class="badge ${priorityClass(t.priority)}">${esc(t.priority || "Medium")}</span><span class="badge">${esc(t.business || "-")}</span></div><h4>${esc(t.title)}</h4><p class="muted">${esc(t.description || "")}</p><div class="task-meta"><span class="badge">👤 ${esc(empName(t.empId))}</span><span class="badge">🏢 ${esc(deptName(t.department))}</span><span class="badge">📅 ${esc(t.dueDate || "-")}</span><span class="badge">⭐ ${esc(t.rating || "-")}/5 • ${esc(t.points || 0)} pts</span>${t.referenceLink ? `<a class="badge link" href="${esc(t.referenceLink)}" target="_blank">🔗 Ref</a>` : ""}</div><div class="row-actions">${taskActions(t)}</div></div>`).join("") || `<p class="muted">No tasks</p>`;
+}
+function priorityClass(p) { return p === "Urgent" ? "red" : p === "High" ? "orange" : p === "Low" ? "green" : "blue"; }
+function taskActions(t) {
+  const s = t.status || "todo";
+  let html = `<button class="btn small" data-view-task="${t.id}">Details</button>`;
+  if (state.role === "admin") {
+    html += `<button class="btn small" data-edit-task="${t.id}">Edit</button><button class="btn small danger" data-del-task="${t.id}">Delete</button>`;
+    if (s === "review") html += `<button class="btn small success" data-complete-task="${t.id}">Approve</button><button class="btn small warn" data-revise-task="${t.id}">Need Changes</button>`;
+    if (s === "complete") html += `<button class="btn small" data-reopen-task="${t.id}">Reopen</button>`;
+  } else {
+    if (s === "todo") html += `<button class="btn small primary" data-task-status="${t.id}:progress">Start</button>`;
+    if (s === "progress") html += `<button class="btn small primary" data-task-status="${t.id}:review">Send Review</button>`;
+  }
+  return html;
+}
+
+function attendanceView() {
+  const emp = currentEmployee();
+  if (state.role === "employee") {
+    const rec = state.attendance.find((a) => a.empId === emp?.id && a.date === todayISO());
+    return `<div class="cards"><div class="card kpi-card green"><p>Status</p><h3>${isSunday() ? "Sunday" : esc(rec?.status || "Not In")}</h3><small>${isSunday() ? "Auto Leave" : "Today"}</small></div><div class="card kpi-card blue"><p>Entry</p><h3>${esc(rec?.entryTime || "-")}</h3><small>Today</small></div><div class="card kpi-card purple"><p>Break</p><h3>${rec?.breakActive ? "On" : "Off"}</h3><small>${esc(rec?.breakMinutes || 0)} min</small></div><div class="card kpi-card orange"><p>Exit</p><h3>${esc(rec?.exitTime || "-")}</h3><small>Today</small></div></div><div class="card" style="margin-top:18px"><div class="row-actions"><button class="btn primary" data-entry>Entry</button><button class="btn warn" data-break-start>Break Start</button><button class="btn success" data-break-end>Break End</button><button class="btn danger" data-exit>Exit</button></div></div>`;
+  }
+  return `<div class="card"><h3>Attendance Records</h3><div class="table-wrap"><table class="table"><tr><th>Date</th><th>Employee</th><th>Status</th><th>Entry</th><th>Break</th><th>Exit</th></tr>${state.attendance.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).map((a)=>`<tr><td>${esc(a.date)}</td><td>${esc(empName(a.empId))}</td><td>${esc(a.status)}</td><td>${esc(a.entryTime||"-")}</td><td>${esc(a.breakMinutes||0)} min</td><td>${esc(a.exitTime||"-")}</td></tr>`).join("")}</table></div></div>`;
+}
+
+function requestsView() {
+  if (state.role === "employee") {
+    return `<div class="card"><h3>Leave Request</h3><form id="leaveForm" class="form-grid"><input name="fromDate" type="date" required><input name="toDate" type="date" required><textarea class="wide" name="reason" placeholder="Why do you need leave?" required></textarea><button class="btn primary">Submit Leave Request</button></form></div><div class="card" style="margin-top:18px"><h3>My Leave History</h3>${leaveTable(state.leaves.filter((l)=>l.empId===state.userId))}</div>`;
+  }
+  return `<div class="card"><h3>Leave Requests</h3>${leaveTable(state.leaves)}</div><div class="card" style="margin-top:18px"><h3>Employee Leave Balance</h3>${leaveBalanceTable()}</div>`;
+}
+function leaveTable(list) {
+  return `<div class="table-wrap"><table class="table"><tr><th>Employee</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Action</th></tr>${list.map((l)=>`<tr><td>${esc(empName(l.empId))}</td><td>${esc(l.fromDate)}</td><td>${esc(l.toDate)}</td><td>${esc(l.days||dateDays(l.fromDate,l.toDate))}</td><td>${esc(l.reason)}</td><td><span class="badge ${l.status==="approved"?"green":l.status==="rejected"?"red":"orange"}">${esc(l.status||"pending")}</span></td><td>${state.role==="admin"&&(!l.status||l.status==="pending")?`<button class="btn small success" data-approve-leave="${l.id}">Approve</button> <button class="btn small danger" data-reject-leave="${l.id}">Reject</button>`:"-"}</td></tr>`).join("")}</table></div>`;
+}
+function leaveBalanceTable() {
+  return `<div class="table-wrap"><table class="table"><tr><th>Employee</th><th>Paid Limit</th><th>Used</th><th>Remaining</th><th>Extra</th></tr>${state.employees.map((e)=>{const lb=leaveBalance(e);return `<tr><td>${esc(e.name)}</td><td>${lb.paidLimit}</td><td>${lb.used}</td><td>${lb.remaining}</td><td>${lb.extra}</td></tr>`}).join("")}</table></div>`;
+}
+
+function payrollView() {
+  const emps = state.role === "employee" ? [currentEmployee()].filter(Boolean) : state.employees;
+  return `<div class="cards"><div class="card kpi-card green"><p>Bonus Rule</p><h3>${bonusMinTasks()} tasks</h3><small>${goodRatingMin()}★+ rating</small></div><div class="card kpi-card blue"><p>Bonus Amount</p><h3>${money(bonusAmount())}</h3><small>Performance bonus</small></div><div class="card kpi-card purple"><p>EOM Bonus</p><h3>${money(eomBonus())}</h3><small>Employee of Month</small></div><div class="card kpi-card orange"><p>Month</p><h3>${currentMonth()}</h3><small>Fresh monthly calculation</small></div></div><div class="card" style="margin-top:18px"><div class="section-title"><h3>Payroll Dashboard</h3>${state.role==="admin"?`<button class="btn primary small" data-export-payroll>Export CSV</button>`:""}</div><div class="table-wrap"><table class="table"><tr><th>Employee</th><th>Base Salary</th><th>Good Tasks</th><th>Bonus</th><th>EOM</th><th>Leave Deduction</th><th>Net Salary</th></tr>${emps.map((e)=>{const p=payrollCalc(e);return `<tr><td>${esc(e.name)}</td><td>${money(p.salary)}</td><td>${p.good}</td><td>${money(p.performanceBonus)}</td><td>${money(p.eom)}</td><td>${money(p.deduction)}</td><td><b>${money(p.net)}</b></td></tr>`}).join("")}</table></div></div><div class="card" style="margin-top:18px"><h3>Completed Task History</h3>${completedHistoryTable(emps.map(e=>e.id))}</div>`;
+}
+
+function completedHistoryView() {
+  const ids = state.role === "employee" ? [state.userId] : state.employees.map((e) => e.id);
+  return `<div class="card"><div class="section-title"><h3>Completed Task History - ${currentMonth()}</h3><button class="btn primary small" data-export-completed>Export Excel CSV</button></div>${completedHistoryTable(ids)}</div>`;
+}
+function completedHistoryTable(empIds) {
+  const rows = state.tasks.filter((t) => t.status === "complete" && empIds.includes(t.empId) && monthKey(t.completedDate || todayISO()) === currentMonth()).sort((a,b)=>String(b.completedDate||"").localeCompare(String(a.completedDate||"")));
+  return `<div class="table-wrap"><table class="table"><tr><th>Date</th><th>Task Code</th><th>Task</th><th>Employee</th><th>Business</th><th>Department</th><th>Rating</th><th>Points</th><th>Review</th></tr>${rows.map((t)=>`<tr><td>${esc(t.completedDate||"-")}</td><td>${esc(t.taskCode||"-")}</td><td>${esc(t.title)}</td><td>${esc(empName(t.empId))}</td><td>${esc(t.business)}</td><td>${esc(t.department)}</td><td>${esc(t.rating||"-")}/5</td><td>${esc(t.points||pointsForRating(t.rating))}</td><td>${esc(t.reviewComment||"")}</td></tr>`).join("") || `<tr><td colspan="9">No completed tasks this month</td></tr>`}</table></div>`;
+}
+
+function settingsView() {
+  if (state.role !== "admin") return `<div class="card">Access denied</div>`;
+  return `<div class="grid two"><div class="card"><h3>Office Timing</h3><p class="muted">Yaha office start/end aur break rules set karo.</p><form id="settingsForm" class="form-grid"><div class="field"><label>Office Start Time</label><input name="officeStart" type="time" value="${esc(state.settings.officeStart||"10:00")}"></div><div class="field"><label>Office End Time</label><input name="officeEnd" type="time" value="${esc(state.settings.officeEnd||"19:00")}"></div><div class="field"><label>Grace Minutes</label><input name="graceMinutes" type="number" value="${esc(state.settings.graceMinutes||10)}"></div><div class="field"><label>Break Minutes</label><input name="breakMinutes" type="number" value="${esc(state.settings.breakMinutes||45)}"></div><div class="field"><label>Default Paid Leave</label><input name="defaultPaidLeave" type="number" value="${esc(state.settings.defaultPaidLeave||2)}"></div><div class="field"><label>Weekly Off</label><select name="weeklyOff"><option selected>Sunday</option></select></div><div class="field wide"><label>Company Logo URL</label><input name="companyLogo" value="${esc(state.settings.companyLogo||"")}" placeholder="Logo image URL"></div><div class="field wide"><label>Announcement</label><textarea name="announcement">${esc(state.settings.announcement||"")}</textarea></div><button class="btn primary">Save Office Settings</button></form></div><div class="card"><h3>Payroll Bonus Rules</h3><p class="muted">Bonus good rating aur completed task count ke basis par milega.</p><form id="bonusForm" class="form-grid"><div class="field"><label>Minimum Good Rating</label><input name="goodRatingMin" type="number" min="1" max="5" value="${esc(state.settings.goodRatingMin||4)}"></div><div class="field"><label>Minimum Good Tasks</label><input name="bonusMinTasks" type="number" value="${esc(state.settings.bonusMinTasks||10)}"></div><div class="field"><label>Performance Bonus Amount</label><input name="bonusAmount" type="number" value="${esc(state.settings.bonusAmount||1000)}"></div><div class="field"><label>Employee of Month Bonus</label><input name="eomBonus" type="number" value="${esc(state.settings.eomBonus||1000)}"></div><div class="field wide"><label>Employee of the Month</label><select name="employeeOfMonthId"><option value="">Auto / Not selected</option>${state.employees.map((e)=>`<option value="${e.id}" ${state.settings.employeeOfMonthId===e.id?"selected":""}>${esc(e.name)} - ${goodRatedTaskCount(e.id)} good tasks</option>`).join("")}</select></div><button class="btn primary">Save Bonus Rules</button></form></div></div>`;
+}
+
+function bindViewActions() {
+  const empForm = $("#empForm"); if (empForm) empForm.onsubmit = addEmployee;
+  const deptForm = $("#deptForm"); if (deptForm) deptForm.onsubmit = addDepartment;
+  const taskForm = $("#taskForm"); if (taskForm) taskForm.onsubmit = addTask;
+  const leaveForm = $("#leaveForm"); if (leaveForm) leaveForm.onsubmit = addLeave;
+  const settingsForm = $("#settingsForm"); if (settingsForm) settingsForm.onsubmit = saveSettings;
+  const bonusForm = $("#bonusForm"); if (bonusForm) bonusForm.onsubmit = saveSettings;
+  document.querySelectorAll("[data-edit-emp]").forEach((b)=>b.onclick=()=>editEmployee(b.dataset.editEmp));
+  document.querySelectorAll("[data-del-emp]").forEach((b)=>b.onclick=()=>delDoc("employees", b.dataset.delEmp, "Delete employee?"));
+  document.querySelectorAll("[data-edit-dept]").forEach((b)=>b.onclick=()=>editDepartment(b.dataset.editDept));
+  document.querySelectorAll("[data-del-dept]").forEach((b)=>b.onclick=()=>delDoc("departments", b.dataset.delDept, "Delete department?"));
+  document.querySelectorAll("[data-edit-task]").forEach((b)=>b.onclick=()=>editTask(b.dataset.editTask));
+  document.querySelectorAll("[data-del-task]").forEach((b)=>b.onclick=()=>delDoc("tasks", b.dataset.delTask, "Delete task?"));
+  document.querySelectorAll("[data-task-status]").forEach((b)=>b.onclick=()=>{const [id,status]=b.dataset.taskStatus.split(":");updateTaskStatus(id,status);});
+  document.querySelectorAll("[data-complete-task]").forEach((b)=>b.onclick=()=>completeTask(b.dataset.completeTask));
+  document.querySelectorAll("[data-revise-task]").forEach((b)=>b.onclick=()=>reviseTask(b.dataset.reviseTask));
+  document.querySelectorAll("[data-reopen-task]").forEach((b)=>b.onclick=()=>updateTaskStatus(b.dataset.reopenTask,"review"));
+  document.querySelectorAll("[data-view-task]").forEach((b)=>b.onclick=()=>viewTask(b.dataset.viewTask));
+  document.querySelectorAll("[data-approve-leave]").forEach((b)=>b.onclick=()=>updateDoc(doc(db,"leave_requests",b.dataset.approveLeave),{status:"approved",updatedAt:serverTimestamp()}));
+  document.querySelectorAll("[data-reject-leave]").forEach((b)=>b.onclick=()=>updateDoc(doc(db,"leave_requests",b.dataset.rejectLeave),{status:"rejected",updatedAt:serverTimestamp()}));
+  document.querySelector("[data-entry]")?.addEventListener("click", markEntry);
+  document.querySelector("[data-break-start]")?.addEventListener("click", markBreakStart);
+  document.querySelector("[data-break-end]")?.addEventListener("click", markBreakEnd);
+  document.querySelector("[data-exit]")?.addEventListener("click", markExit);
+  document.querySelector("[data-export-completed]")?.addEventListener("click", exportCompletedTasks);
+  document.querySelector("[data-export-payroll]")?.addEventListener("click", exportPayroll);
+  document.querySelector("[data-eom-set]")?.addEventListener("click", setEomModal);
+}
+async function addEmployee(e) { e.preventDefault(); const data=Object.fromEntries(new FormData(e.target).entries()); if(state.employees.some(x=>x.empId===data.empId||x.email===data.empId)) return toast("Employee ID already exists","error"); await addDoc(collection(db,"employees"),{...data,email:data.empId,status:"Active",createdAt:serverTimestamp()}); e.target.reset(); toast("Employee added"); }
+async function addDepartment(e) { e.preventDefault(); const name=new FormData(e.target).get("name").trim(); if(state.departments.some(d=>d.name.toLowerCase()===name.toLowerCase())) return toast("Department already exists","error"); await addDoc(collection(db,"departments"),{name,createdAt:serverTimestamp()}); e.target.reset(); toast("Department added"); }
+async function addTask(e) { e.preventDefault(); const data=Object.fromEntries(new FormData(e.target).entries()); const prefix=(data.business||"OAS").split(" ")[0].slice(0,3).toUpperCase(); const count=state.tasks.length+1; await addDoc(collection(db,"tasks"),{...data,taskCode:`${prefix}-${String(count).padStart(4,"0")}`,status:"todo",rating:0,points:0,createdAt:todayISO(),updatedAt:todayISO()}); e.target.reset(); toast("Task created"); }
+async function addLeave(e) { e.preventDefault(); const data=Object.fromEntries(new FormData(e.target).entries()); await addDoc(collection(db,"leave_requests"),{...data,empId:state.userId,days:dateDays(data.fromDate,data.toDate),status:"pending",createdAt:todayISO()}); e.target.reset(); toast("Leave request sent"); }
+async function saveSettings(e) { e.preventDefault(); const data=Object.fromEntries(new FormData(e.target).entries()); await setDoc(doc(db,"settings","office"),{...state.settings,...data},{merge:true}); toast("Settings saved"); }
+async function delDoc(col,id,title){ if(await confirmBox(title,"This action cannot be undone.")){ await deleteDoc(doc(db,col,id)); toast("Deleted"); }}
+async function editEmployee(id){ const e=empById(id); if(!e) return; await modal({title:"Edit Employee", submitText:"Save Changes", body:`<div class="form-grid"><div class="field"><label>Name</label><input name="name" value="${esc(e.name)}" required></div><div class="field"><label>Employee ID</label><input name="empId" value="${esc(e.empId)}" required></div><div class="field"><label>Password</label><input name="password" value="${esc(e.password)}" required></div><div class="field"><label>Department</label><select name="department">${deptOptions(e.department)}</select></div><div class="field"><label>Role</label><input name="role" value="${esc(e.role||"")}"></div><div class="field"><label>Phone</label><input name="phone" value="${esc(e.phone||"")}"></div><div class="field"><label>Salary</label><input name="salary" type="number" value="${esc(e.salary||0)}"></div><div class="field"><label>Paid Leave</label><input name="paidLeave" type="number" value="${esc(e.paidLeave||state.settings.defaultPaidLeave||2)}"></div><div class="field wide"><label>Profile Photo URL</label><input name="photoUrl" value="${esc(e.photoUrl||"")}"></div></div>`, onSubmit: async(data)=>{await updateDoc(doc(db,"employees",id),data); toast("Employee updated");}}); }
+async function editDepartment(id){ const d=state.departments.find(x=>x.id===id); if(!d) return; await modal({title:"Edit Department", body:`<div class="field"><label>Department Name</label><input name="name" value="${esc(d.name)}" required></div>`, onSubmit:async(data)=>{await updateDoc(doc(db,"departments",id),data); toast("Department updated");}}); }
+async function editTask(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; await modal({title:"Edit Task", wide:true, body:`<div class="form-grid"><div class="field"><label>Title</label><input name="title" value="${esc(t.title)}" required></div><div class="field"><label>Business</label><select name="business"><option ${t.business==="SBX Media"?"selected":""}>SBX Media</option><option ${t.business==="SIA Jewels"?"selected":""}>SIA Jewels</option><option ${t.business==="YOLOX Fashion"?"selected":""}>YOLOX Fashion</option><option ${t.business==="Personal"?"selected":""}>Personal</option></select></div><div class="field"><label>Department</label><select name="department">${deptOptions(t.department)}</select></div><div class="field"><label>Employee</label><select name="empId">${empOptions(t.empId)}</select></div><div class="field"><label>Priority</label><select name="priority"><option ${t.priority==="Low"?"selected":""}>Low</option><option ${t.priority==="Medium"?"selected":""}>Medium</option><option ${t.priority==="High"?"selected":""}>High</option><option ${t.priority==="Urgent"?"selected":""}>Urgent</option></select></div><div class="field"><label>Due Date</label><input name="dueDate" type="date" value="${esc(t.dueDate||"")}"></div><div class="field"><label>Estimated Hours</label><input name="estimatedHours" type="number" value="${esc(t.estimatedHours||"")}"></div><div class="field wide"><label>Reference Link</label><input name="referenceLink" value="${esc(t.referenceLink||"")}"></div><div class="field wide"><label>Description</label><textarea name="description">${esc(t.description||"")}</textarea></div></div>`, onSubmit: async(data)=>{await updateDoc(doc(db,"tasks",id),{...data,updatedAt:todayISO()}); toast("Task updated");}}); }
+async function viewTask(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; await modal({title:`Task Details - ${t.taskCode||""}`, submitText:"Close", body:`<p><b>${esc(t.title)}</b></p><p class="muted">${esc(t.description||"")}</p><div class="task-meta"><span class="badge">${esc(t.business)}</span><span class="badge">${esc(t.department)}</span><span class="badge">${esc(empName(t.empId))}</span><span class="badge">${esc(t.status)}</span><span class="badge">⭐ ${esc(t.rating||"-")}/5</span></div>${t.referenceLink?`<p><a class="link" target="_blank" href="${esc(t.referenceLink)}">Open Reference Link</a></p>`:""}<p><b>Admin Review:</b> ${esc(t.reviewComment||"-")}</p>`, onSubmit: async()=>{} }); }
+async function updateTaskStatus(id,status){ await updateDoc(doc(db,"tasks",id),{status,updatedAt:todayISO()}); toast("Task updated"); }
+async function completeTask(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; await modal({title:"Approve Task", submitText:"Approve", body:`<div class="field"><label>Rating 1-5</label><input name="rating" type="number" min="1" max="5" value="5" required></div><div class="field"><label>Review Comment</label><textarea name="reviewComment" placeholder="Good work / changes notes"></textarea></div>`, onSubmit:async(data)=>{const rating=Number(data.rating); await updateDoc(doc(db,"tasks",id),{status:"complete",rating,points:pointsForRating(rating),reviewComment:data.reviewComment||"",completedDate:todayISO(),updatedAt:todayISO()}); toast("Task approved");}}); }
+async function reviseTask(id){ await modal({title:"Need Changes", submitText:"Send Revision", body:`<div class="field"><label>Revision Message</label><textarea name="reviewComment" required></textarea></div>`, onSubmit:async(data)=>{await updateDoc(doc(db,"tasks",id),{status:"progress",reviewComment:data.reviewComment,updatedAt:todayISO()}); toast("Revision sent");}}); }
+async function setEomModal(){ await modal({title:"Set Employee of the Month", body:`<div class="field"><label>Employee</label><select name="employeeOfMonthId"><option value="">Auto / None</option>${state.employees.map(e=>`<option value="${e.id}" ${state.settings.employeeOfMonthId===e.id?"selected":""}>${esc(e.name)} - ${goodRatedTaskCount(e.id)} good tasks</option>`).join("")}</select></div>`, onSubmit: async(data)=>{await setDoc(doc(db,"settings","office"),{...state.settings,employeeOfMonthId:data.employeeOfMonthId},{merge:true}); toast("Employee of month updated");}}); }
+async function markEntry(){ if(isSunday()) return toast("Sunday is auto leave", "error"); const emp=currentEmployee(); const existing=state.attendance.find(a=>a.empId===emp.id&&a.date===todayISO()); if(existing) return toast("Entry already marked", "error"); await addDoc(collection(db,"attendance"),{empId:emp.id,date:todayISO(),status:"present",entryTime:new Date().toLocaleTimeString(),breakMinutes:0,breakActive:false,createdAt:serverTimestamp()}); toast("Entry marked"); }
+async function markBreakStart(){ const rec=state.attendance.find(a=>a.empId===state.userId&&a.date===todayISO()); if(!rec) return toast("Mark entry first","error"); await updateDoc(doc(db,"attendance",rec.id),{breakActive:true,breakStart:Date.now()}); toast("Break started"); }
+async function markBreakEnd(){ const rec=state.attendance.find(a=>a.empId===state.userId&&a.date===todayISO()); if(!rec||!rec.breakActive) return toast("No active break","error"); const mins=Math.round((Date.now()-Number(rec.breakStart||Date.now()))/60000); await updateDoc(doc(db,"attendance",rec.id),{breakActive:false,breakMinutes:Number(rec.breakMinutes||0)+mins}); toast("Break ended"); }
+async function markExit(){ const rec=state.attendance.find(a=>a.empId===state.userId&&a.date===todayISO()); if(!rec) return toast("Mark entry first","error"); await updateDoc(doc(db,"attendance",rec.id),{exitTime:new Date().toLocaleTimeString()}); toast("Exit marked"); }
+function exportCompletedTasks(){ const ids=state.role==="employee"?[state.userId]:state.employees.map(e=>e.id); const rows=state.tasks.filter(t=>t.status==="complete"&&ids.includes(t.empId)&&monthKey(t.completedDate||todayISO())===currentMonth()); const header=["Date","Task Code","Task","Employee","Business","Department","Rating","Points","Admin Review"]; const csv=[header, ...rows.map(t=>[t.completedDate||"-",t.taskCode||"-",t.title||"-",empName(t.empId),t.business||"-",t.department||"-",`${t.rating||"-"}/5`,t.points||pointsForRating(t.rating),t.reviewComment||""])].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n"); downloadCsv(csv,`completed-tasks-${currentMonth()}.csv`); }
+function exportPayroll(){ const header=["Employee","Base Salary","Good Tasks","Performance Bonus","EOM Bonus","Leave Deduction","Net Salary"]; const csv=[header,...state.employees.map(e=>{const p=payrollCalc(e);return [e.name,p.salary,p.good,p.performanceBonus,p.eom,p.deduction,p.net];})].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n"); downloadCsv(csv,`payroll-${currentMonth()}.csv`); }
+function downloadCsv(csv,name){ const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); toast("CSV exported"); }
+
+window.addEventListener("DOMContentLoaded", async () => { ensureStyles(); if (state.role && state.userId) await startApp(); else renderLogin(); });
