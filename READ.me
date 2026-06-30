@@ -1,15 +1,33 @@
-# Office Attendance System
+# Office Attendance System — Version 3
 
-Admin login:
-- Email: admin@office.com
-- Password: admin123
+Firebase based Office Attendance + Work Tracking System.
 
-Important Firebase setup:
-1. Firebase Console > Firestore Database > Create Database.
-2. Start in test mode for development.
-3. If Rules tab is closed, use this temporary rule while testing:
+## Admin Login
+Email: `admin@office.com`  
+Password: `admin123`
 
-```
+## V3 Focus: Task Management
+- Task create with Task Title
+- Auto/manual Task Code
+- Business: SBX Media, SIA Jewels, YOLOX Fashion, Personal
+- Department dropdown
+- Assign Employee
+- Priority: Low, Medium, High, Urgent
+- Due Date
+- Estimated Hours
+- Description
+- Admin Kanban board: To Do, In Progress, Review, Completed
+- Employee Kanban board: only assigned tasks
+- Employee can move: To Do → In Progress → Review
+- Only Admin can move Review → Completed
+- Task edit/delete by Admin
+- Task filters by business, status, employee, search
+- Activity timeline logs task changes
+
+## Firebase
+Use Firestore test mode during development:
+
+```js
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -20,9 +38,8 @@ service cloud.firestore {
 }
 ```
 
-Upload files to GitHub Pages root:
+Upload these files to GitHub Pages:
 - index.html
 - style.css
 - app.js
-
-Note: This is a front-end Firebase version. Production ke liye secure Firebase Authentication + strict rules add karna zaroori hai.
+- README.md
