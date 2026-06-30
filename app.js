@@ -1,5 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyC5tFS7Pw4pGoFy7Shl5DShHCanWns9Y4o',
@@ -13,6 +14,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const today = () => new Date().toISOString().slice(0,10);
@@ -31,6 +33,38 @@ function dateNice(d){return d ? new Date(d+'T00:00:00').toLocaleDateString() : '
 function daysLeft(d){ if(!d) return ''; const diff=Math.ceil((new Date(d+'T23:59:59')-new Date())/86400000); if(diff<0)return `${Math.abs(diff)} day overdue`; if(diff===0)return 'Due today'; return `${diff} day left`; }
 function statusLabel(s){return ({todo:'To Do',progress:'In Progress',review:'Review',complete:'Completed'}[s]||s)}
 function priorityClass(p){return String(p||'medium').toLowerCase()}
+function safeFileName(name='file'){return String(name).replace(/[^a-zA-Z0-9._-]/g,'_')}
+function fileKind(name=''){ const ext=String(name).split('.').pop().toLowerCase(); if(['jpg','jpeg','png','webp','gif','svg'].includes(ext))return 'image'; if(['mp4','mov','webm'].includes(ext))return 'video'; if(ext==='pdf')return 'pdf'; if(['zip','rar'].includes(ext))return 'zip'; return 'file'; }
+function historyItem(text, by=state.role==='admin'?'Admin':state.employee?.name||'Employee'){return {text,by,date:today(),time:nowTime()}}
+async function uploadFiles(files, taskCode, type){
+  const arr=[]; const list=[...files||[]];
+  for(const file of list){
+    const path=`task-files/${taskCode||'task'}/${type}/${Date.now()}-${safeFileName(file.name)}`;
+    const storageRef=ref(storage,path);
+    await uploadBytes(storageRef,file);
+    const url=await getDownloadURL(storageRef);
+    arr.push({name:file.name,url,path,type:file.type||'',size:file.size,kind:fileKind(file.name),uploadedBy:state.role==='admin'?'Admin':state.employee?.name||state.employee?.empId||'Employee',uploadedAt:`${today()} ${nowTime()}`});
+  }
+  return arr;
+}
+function fileListHTML(files=[]){
+  if(!files.length)return '<p class="muted-small">No files uploaded</p>';
+  return `<div class="file-list">${files.map(f=>`<a class="file-chip" href="${esc(f.url)}" target="_blank" rel="noopener"><span>${f.kind==='image'?'🖼️':f.kind==='video'?'🎬':f.kind==='pdf'?'📄':f.kind==='zip'?'🗜️':'📎'}</span><b>${esc(f.name)}</b><small>${esc(f.uploadedBy||'')} • ${esc(f.uploadedAt||'')}</small></a>`).join('')}</div>`;
+}
+function taskHistoryHTML(t){
+  const h=t.history||[];
+  return h.length ? h.slice().reverse().map(x=>`<div class="timeline-item"><b>${esc(x.time||'')}</b><span>${esc(x.by||'')} — ${esc(x.text||'')} <small>${esc(x.date||'')}</small></span></div>`).join('') : '<p class="muted-small">No timeline yet</p>';
+}
+function commentsHTML(t){
+  const c=t.comments||[];
+  return c.length ? c.slice().reverse().map(x=>`<div class="comment"><b>${esc(x.by)}</b><small>${esc(x.date)} ${esc(x.time)}</small><p>${esc(x.text)}</p></div>`).join('') : '<p class="muted-small">No comments yet</p>';
+}
+function workVersionsHTML(t){
+  const w=t.workFiles||[];
+  if(!w.length)return '<p class="muted-small">No final work uploaded</p>';
+  return `<div class="file-list">${w.slice().reverse().map(f=>`<a class="file-chip" href="${esc(f.url)}" target="_blank" rel="noopener"><span>${f.kind==='image'?'🖼️':f.kind==='video'?'🎬':'📎'}</span><b>V${esc(f.version||1)} — ${esc(f.name)}</b><small>${esc(f.uploadedBy||'')} • ${esc(f.uploadedAt||'')}</small></a>`).join('')}</div>`;
+}
+
 
 async function seed(){
   const settingsRef = doc(db,'settings','office');
@@ -109,9 +143,9 @@ function tasksView(){
   const depOpts = state.departments.map(d=>`<option>${esc(d.name)}</option>`).join('');
   const empOpts = state.employees.map(e=>`<option value="${esc(e.empId)}">${esc(e.name)} (${esc(e.empId)})</option>`).join('');
   const fEmp = `<option>All</option>${state.employees.map(e=>`<option value="${esc(e.empId)}" ${taskFilters.employee===e.empId?'selected':''}>${esc(e.name)}</option>`).join('')}`;
-  $('#tasksView').innerHTML = `<div class="card"><h3>Version 3 — Task Management</h3><form id="taskForm" class="form-grid"><input name="title" placeholder="Task title" required><input name="taskCode" placeholder="Task code auto / manual"><select name="business"><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select name="department">${depOpts}</select><select name="empId" required><option value="">Assign employee</option>${empOpts}</select><select name="priority"><option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option></select><input name="dueDate" type="date"><input name="estimatedHours" type="number" min="0" step="0.5" placeholder="Estimated hours"><textarea name="description" placeholder="Task description / instructions"></textarea><button class="primary-btn">Create Task</button></form></div><div class="card"><h3>Task Filters</h3><div class="filter-row"><select id="filterBusiness"><option>All</option><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select id="filterStatus"><option>All</option><option value="todo">To Do</option><option value="progress">In Progress</option><option value="review">Review</option><option value="complete">Completed</option></select><select id="filterEmp">${fEmp}</select><input id="filterSearch" placeholder="Search task/code"><button id="clearFilters" class="ghost-btn">Clear</button></div>${kanbanBoard(filteredTasks(), true)}</div>`;
+  $('#tasksView').innerHTML = `<div class="card"><h3>Version 3 — Task Management</h3><form id="taskForm" class="form-grid"><input name="title" placeholder="Task title" required><input name="taskCode" placeholder="Task code auto / manual"><select name="business"><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select name="department">${depOpts}</select><select name="empId" required><option value="">Assign employee</option>${empOpts}</select><select name="priority"><option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option></select><input name="dueDate" type="date"><input name="estimatedHours" type="number" min="0" step="0.5" placeholder="Estimated hours"><textarea name="description" placeholder="Task description / instructions"></textarea><label class="upload-box">📎 Reference Files <input name="referenceFiles" type="file" multiple></label><button class="primary-btn">Create Task</button></form></div><div class="card"><h3>Task Filters</h3><div class="filter-row"><select id="filterBusiness"><option>All</option><option>SBX Media</option><option>SIA Jewels</option><option>YOLOX Fashion</option><option>Personal</option></select><select id="filterStatus"><option>All</option><option value="todo">To Do</option><option value="progress">In Progress</option><option value="review">Review</option><option value="complete">Completed</option></select><select id="filterEmp">${fEmp}</select><input id="filterSearch" placeholder="Search task/code"><button id="clearFilters" class="ghost-btn">Clear</button></div>${kanbanBoard(filteredTasks(), true)}</div>`;
   $('#filterBusiness').value=taskFilters.business; $('#filterStatus').value=taskFilters.status; $('#filterSearch').value=taskFilters.search;
-  $('#taskForm').onsubmit=async ev=>{ev.preventDefault(); const data=Object.fromEntries(new FormData(ev.target)); if(!data.taskCode) data.taskCode=makeTaskCode(data.business,data.department); data.status='todo'; data.createdAt=serverTimestamp(); data.createdDate=today(); data.updatedAt=serverTimestamp(); await addDoc(collection(db,'tasks'),data); await logActivity(data.empId,`New task assigned: ${data.taskCode}`,'task'); toast('Task created'); await refresh();};
+  $('#taskForm').onsubmit=async ev=>{ev.preventDefault(); const fd=new FormData(ev.target); const data=Object.fromEntries(fd); delete data.referenceFiles; if(!data.taskCode) data.taskCode=makeTaskCode(data.business,data.department); const files=ev.target.referenceFiles?.files||[]; data.referenceFiles=await uploadFiles(files,data.taskCode,'reference'); data.workFiles=[]; data.comments=[]; data.history=[historyItem(`Task created and assigned to ${empName(data.empId)}`,'Admin')]; data.status='todo'; data.createdAt=serverTimestamp(); data.createdDate=today(); data.updatedAt=serverTimestamp(); await addDoc(collection(db,'tasks'),data); await logActivity(data.empId,`New task assigned: ${data.taskCode}`,'task'); toast('Task created'); await refresh();};
   $('#filterBusiness').onchange=e=>{taskFilters.business=e.target.value;tasksView()}; $('#filterStatus').onchange=e=>{taskFilters.status=e.target.value;tasksView()}; $('#filterEmp').onchange=e=>{taskFilters.employee=e.target.value;tasksView()}; $('#filterSearch').oninput=e=>{taskFilters.search=e.target.value;tasksView()}; $('#clearFilters').onclick=()=>{taskFilters={business:'All',status:'All',employee:'All',search:''};tasksView()};
   initKanbanDnd();
 }
@@ -126,10 +160,11 @@ function kanbanBoard(tasks, admin=false){
 function taskCard(t,admin=false){
   const canEmpMove = state.role==='employee' && t.status!=='complete';
   const lock = state.role==='employee' && t.status==='complete';
-  return `<div class="task-card" draggable="${lock?'false':'true'}" data-task-id="${t.id}" data-current-status="${t.status||'todo'}"><div class="task-meta"><span class="mini">${esc(t.taskCode||'NO-CODE')}</span><span class="status ${priorityClass(t.priority)}">${esc(t.priority||'Medium')}</span><span class="mini">${esc(t.business||'-')}</span></div><h4>${esc(t.title)}</h4><p class="task-desc">${esc(t.description||'No description')}</p><div class="task-meta"><span class="mini">👤 ${esc(empName(t.empId))}</span><span class="mini">🏢 ${esc(t.department||'-')}</span><span class="mini">📅 ${dateNice(t.dueDate)} ${daysLeft(t.dueDate)?'• '+daysLeft(t.dueDate):''}</span><span class="mini">⏱ ${esc(t.estimatedHours||'-')}h</span></div><div class="task-actions">${adminActions(t,admin)}${employeeActions(t,canEmpMove)}</div></div>`;
+  const refs=(t.referenceFiles||[]).length, works=(t.workFiles||[]).length, comments=(t.comments||[]).length;
+  return `<div class="task-card" draggable="${lock?'false':'true'}" data-task-id="${t.id}" data-current-status="${t.status||'todo'}"><div class="task-meta"><span class="mini">${esc(t.taskCode||'NO-CODE')}</span><span class="status ${priorityClass(t.priority)}">${esc(t.priority||'Medium')}</span><span class="mini">${esc(t.business||'-')}</span></div><h4>${esc(t.title)}</h4><p class="task-desc">${esc(t.description||'No description')}</p><div class="task-meta"><span class="mini">👤 ${esc(empName(t.empId))}</span><span class="mini">🏢 ${esc(t.department||'-')}</span><span class="mini">📅 ${dateNice(t.dueDate)} ${daysLeft(t.dueDate)?'• '+daysLeft(t.dueDate):''}</span><span class="mini">⏱ ${esc(t.estimatedHours||'-')}h</span></div><div class="task-meta"><span class="mini">📎 Ref ${refs}</span><span class="mini">📤 Work ${works}</span><span class="mini">💬 ${comments}</span><span class="mini">⏱ Actual ${esc(t.actualMinutes?fmtHours(Number(t.actualMinutes)):'--')}</span></div>${t.revisionNote?`<p class="revision-note">Revision: ${esc(t.revisionNote)}</p>`:''}<div class="task-actions"><button class="ghost-btn" onclick="window.viewTask('${t.id}')">Details</button>${adminActions(t,admin)}${employeeActions(t,canEmpMove)}</div></div>`;
 }
-function adminActions(t,admin){ if(!admin)return ''; let html=`<button class="ghost-btn" onclick="window.editTask('${t.id}')">Edit</button><button class="danger-btn" onclick="window.deleteTask('${t.id}')">Delete</button>`; if(t.status==='review') html+=`<button class="primary-btn" onclick="window.moveTask('${t.id}','complete')">Final Complete</button>`; if(t.status==='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','review')">Reopen Review</button>`; if(t.status!=='todo' && t.status!=='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','todo')">Back To Do</button>`; return html; }
-function employeeActions(t,can){ if(!can)return ''; if(t.status==='todo') return `<button class="primary-btn" onclick="window.moveTask('${t.id}','progress')">Start</button>`; if(t.status==='progress') return `<button class="primary-btn" onclick="window.moveTask('${t.id}','review')">Send Review</button><button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Add Note</button>`; if(t.status==='review') return `<button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Add Note</button>`; return ''; }
+function adminActions(t,admin){ if(!admin)return ''; let html=`<button class="ghost-btn" onclick="window.editTask('${t.id}')">Edit</button><button class="ghost-btn" onclick="window.uploadReference('${t.id}')">Add Ref</button><button class="danger-btn" onclick="window.deleteTask('${t.id}')">Delete</button>`; if(t.status==='review') html+=`<button class="ghost-btn" onclick="window.requestRevision('${t.id}')">Need Changes</button><button class="primary-btn" onclick="window.moveTask('${t.id}','complete')">Approve Complete</button>`; if(t.status==='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','review')">Reopen Review</button>`; if(t.status!=='todo' && t.status!=='complete') html+=`<button class="ghost-btn" onclick="window.moveTask('${t.id}','todo')">Back To Do</button>`; return html; }
+function employeeActions(t,can){ if(!can)return ''; let timer = t.activeTimerStart ? `<button class="ghost-btn" onclick="window.stopWork('${t.id}')">Stop Timer</button>` : `<button class="ghost-btn" onclick="window.startWork('${t.id}')">Start Timer</button>`; if(t.status==='todo') return `<button class="primary-btn" onclick="window.moveTask('${t.id}','progress')">Start</button>${timer}`; if(t.status==='progress') return `${timer}<button class="ghost-btn" onclick="window.uploadWork('${t.id}')">Upload Work</button><button class="primary-btn" onclick="window.moveTask('${t.id}','review')">Send Review</button><button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Comment</button>`; if(t.status==='review') return `<button class="ghost-btn" onclick="window.uploadWork('${t.id}')">Upload More</button><button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Comment</button>`; return ''; }
 function canMoveTask(t, status){
   if(!t) return {ok:false,msg:'Task not found'};
   if(state.role==='employee'){
@@ -142,11 +177,11 @@ function canMoveTask(t, status){
 }
 window.moveTask=async (id,status)=>{
   const t=state.tasks.find(x=>x.id===id); const check=canMoveTask(t,status); if(!check.ok) return toast(check.msg);
-  const extra={status,updatedAt:serverTimestamp(),lastUpdatedBy:state.role};
+  const extra={status,updatedAt:serverTimestamp(),lastUpdatedBy:state.role, history:[...(t.history||[]), historyItem(`Status moved to ${statusLabel(status)}`)]};
   if(status==='progress' && !t.startedAt) extra.startedAt=serverTimestamp();
   if(status==='review') extra.reviewAt=serverTimestamp();
-  if(status==='complete') { extra.completedAt=serverTimestamp(); extra.completedBy='admin'; }
-  await updateDoc(doc(db,'tasks',id),extra); await logActivity(t.empId,`Task ${t.taskCode} moved to ${statusLabel(status)}`,'task'); toast(status==='complete'?'Task final completed':'Task updated'); await refresh();
+  if(status==='complete') { extra.completedAt=serverTimestamp(); extra.completedBy='admin'; const rating=prompt('Rating 1-5 for this work','5')||''; const reviewComment=prompt('Admin review comment','Approved')||''; extra.rating=rating; extra.reviewComment=reviewComment; extra.history.push(historyItem(`Approved with ${rating} star rating: ${reviewComment}`,'Admin')); }
+  await updateDoc(doc(db,'tasks',id),extra); await logActivity(t.empId,`Task ${t.taskCode} moved to ${statusLabel(status)}`,'task'); toast(status==='complete'?'Task approved and completed':'Task updated'); await refresh();
 };
 function initKanbanDnd(){
   $$('.task-card[draggable="true"]').forEach(card=>{
@@ -163,6 +198,14 @@ window.addTaskNote=async id=>{ const t=state.tasks.find(x=>x.id===id); const not
 window.editTask=async id=>{ const t=state.tasks.find(x=>x.id===id); const title=prompt('Task title',t.title||''); if(!title)return; const priority=prompt('Priority Low/Medium/High/Urgent',t.priority||'Medium'); const dueDate=prompt('Due date YYYY-MM-DD',t.dueDate||''); const description=prompt('Description',t.description||''); await updateDoc(doc(db,'tasks',id),{title,priority,dueDate,description,updatedAt:serverTimestamp()}); await logActivity(t.empId,`Task edited: ${t.taskCode}`,'task'); toast('Task edited'); await refresh(); };
 window.deleteTask=async id=>{ const t=state.tasks.find(x=>x.id===id); if(confirm('Delete task?')){await deleteDoc(doc(db,'tasks',id)); await logActivity(t.empId,`Task deleted: ${t.taskCode}`,'task'); toast('Task deleted'); await refresh();} };
 
+
+window.viewTask=(id)=>{ const t=state.tasks.find(x=>x.id===id); if(!t)return; const modal=document.createElement('div'); modal.className='modal-backdrop'; modal.innerHTML=`<div class="modal-card"><button class="modal-close" onclick="this.closest('.modal-backdrop').remove()">×</button><h2>${esc(t.taskCode)} — ${esc(t.title)}</h2><div class="task-meta"><span class="status ${priorityClass(t.priority)}">${esc(t.priority)}</span><span class="mini">${esc(t.business)}</span><span class="mini">${esc(t.department)}</span><span class="mini">Assigned: ${esc(empName(t.empId))}</span><span class="mini">Due: ${dateNice(t.dueDate)}</span></div><p class="notice">${esc(t.description||'No description')}</p><div class="modal-grid"><div><h3>Admin Reference Files</h3>${fileListHTML(t.referenceFiles||[])}</div><div><h3>Final Work / Versions</h3>${workVersionsHTML(t)}</div></div><div class="modal-grid"><div><h3>Comments</h3>${commentsHTML(t)}<button class="ghost-btn" onclick="window.addTaskNote('${t.id}')">Add Comment</button></div><div><h3>Timeline</h3>${taskHistoryHTML(t)}</div></div>${t.rating?`<div class="notice"><b>Admin Rating:</b> ${esc(t.rating)} ⭐<br><b>Review:</b> ${esc(t.reviewComment||'')}</div>`:''}</div>`; document.body.appendChild(modal); };
+function chooseFiles(cb){ const input=document.createElement('input'); input.type='file'; input.multiple=true; input.onchange=()=>cb(input.files); input.click(); }
+window.uploadReference=(id)=>chooseFiles(async files=>{ const t=state.tasks.find(x=>x.id===id); if(!t||!files.length)return; const uploaded=await uploadFiles(files,t.taskCode,'reference'); await updateDoc(doc(db,'tasks',id),{referenceFiles:[...(t.referenceFiles||[]),...uploaded],history:[...(t.history||[]),historyItem(`${uploaded.length} reference file uploaded`)],updatedAt:serverTimestamp()}); await logActivity(t.empId,`Reference uploaded: ${t.taskCode}`,'task'); toast('Reference uploaded'); await refresh(); });
+window.uploadWork=(id)=>chooseFiles(async files=>{ const t=state.tasks.find(x=>x.id===id); if(!t||!files.length)return; const uploaded=await uploadFiles(files,t.taskCode,'work'); let version=(t.workFiles||[]).length+1; uploaded.forEach(f=>f.version=version++); await updateDoc(doc(db,'tasks',id),{workFiles:[...(t.workFiles||[]),...uploaded],history:[...(t.history||[]),historyItem(`${uploaded.length} final work file uploaded`)],updatedAt:serverTimestamp()}); await logActivity(t.empId,`Work uploaded: ${t.taskCode}`,'task'); toast('Work uploaded'); await refresh(); });
+window.requestRevision=async(id)=>{ const t=state.tasks.find(x=>x.id===id); const note=prompt('Revision note / changes needed'); if(!note)return; await updateDoc(doc(db,'tasks',id),{status:'progress',revisionNote:note,history:[...(t.history||[]),historyItem(`Revision requested: ${note}`,'Admin')],updatedAt:serverTimestamp()}); await logActivity(t.empId,`Revision requested: ${t.taskCode}`,'task'); toast('Task sent back to Progress'); await refresh(); };
+window.startWork=async(id)=>{ const t=state.tasks.find(x=>x.id===id); await updateDoc(doc(db,'tasks',id),{activeTimerStart:Date.now(),history:[...(t.history||[]),historyItem('Work timer started')],updatedAt:serverTimestamp()}); toast('Timer started'); await refresh(); };
+window.stopWork=async(id)=>{ const t=state.tasks.find(x=>x.id===id); if(!t?.activeTimerStart)return; const mins=Math.max(1,Math.round((Date.now()-Number(t.activeTimerStart))/60000)); const logs=[...(t.timeLogs||[]),{start:t.activeTimerStart,end:Date.now(),minutes:mins,by:state.employee?.name||'Employee'}]; await updateDoc(doc(db,'tasks',id),{activeTimerStart:null,timeLogs:logs,actualMinutes:Number(t.actualMinutes||0)+mins,history:[...(t.history||[]),historyItem(`Work timer stopped: ${fmtHours(mins)}`)],updatedAt:serverTimestamp()}); toast(`Timer saved: ${fmtHours(mins)}`); await refresh(); };
 function attendanceView(){
   $('#attendanceView').innerHTML = `<div class="card"><h3>Attendance Records</h3><div class="table-wrap"><table class="table"><tr><th>Date</th><th>Employee</th><th>Entry</th><th>Break</th><th>Exit</th><th>Status</th><th>Late</th><th>Work Hours</th><th>OT</th></tr>${state.attendance.slice().reverse().map(r=>`<tr><td>${r.date}</td><td>${esc(empName(r.empId))}</td><td>${r.entry||'-'}</td><td>${r.breakStart||'-'} / ${r.breakEnd||'-'}</td><td>${r.exit||'-'}</td><td><span class="status ${String(r.status).toLowerCase()}">${r.status}</span></td><td>${isLate(r)?'Yes':'No'}</td><td>${recWorkHours(r)}</td><td>${overtime(r)}</td></tr>`).join('')}</table></div></div>`;
 }
