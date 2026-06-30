@@ -57,8 +57,33 @@ function switchView(id){
 document.querySelectorAll('.switcher button').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('.switcher button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');$('#adminLogin').classList.toggle('hidden',btn.dataset.login!=='admin');$('#employeeLogin').classList.toggle('hidden',btn.dataset.login!=='employee')});
 document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
 $('#logoutBtn').onclick=()=>location.reload();
-$('#adminLogin').onsubmit=async e=>{e.preventDefault(); if($('#adminEmail').value==='admin@office.com' && $('#adminPassword').value==='admin123'){state.role='admin'; await seed(); await loadAll(); showApp('admin')} else toast('Wrong admin login')};
-$('#employeeLogin').onsubmit=async e=>{e.preventDefault(); await loadAll(); const emp=state.employees.find(x=>x.empId===$('#employeeLoginId').value.trim() && x.password===$('#employeeLoginPassword').value.trim()); if(emp){state.role='employee'; state.employee=emp; showApp('employee')} else toast('Wrong employee ID or password')};
+$('#adminLogin').onsubmit=async e=>{
+  e.preventDefault();
+  const email=$('#adminEmail').value.trim();
+  const pass=$('#adminPassword').value.trim();
+  if(email==='admin@office.com' && pass==='admin123'){
+    try{
+      state.role='admin';
+      await seed();
+      await loadAll();
+      showApp('admin');
+    }catch(err){
+      console.error(err);
+      toast('Firebase permission/rules issue. Firestore test mode ON karo.');
+    }
+  } else toast('Wrong admin login');
+};
+$('#employeeLogin').onsubmit=async e=>{
+  e.preventDefault();
+  try{
+    await loadAll();
+    const emp=state.employees.find(x=>x.empId===$('#employeeLoginId').value.trim() && x.password===$('#employeeLoginPassword').value.trim());
+    if(emp){state.role='employee'; state.employee=emp; showApp('employee')} else toast('Wrong employee ID or password');
+  }catch(err){
+    console.error(err);
+    toast('Firebase permission/rules issue. Firestore test mode ON karo.');
+  }
+};
 
 function todayRecords(){return state.attendance.filter(a=>a.date===today())}
 function currentStatus(empId){const r=todayRecords().find(a=>a.empId===empId); return r?.status||'Absent'}
