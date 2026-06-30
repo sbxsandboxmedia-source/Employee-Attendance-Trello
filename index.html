@@ -1,1 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Office Attendance System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2360c7a4'/%3E%3Ctext x='32' y='39' font-size='22' text-anchor='middle' fill='white' font-family='Arial' font-weight='700'%3EOA%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="toast" class="toast"></div>
 
+  <section id="loginPage" class="login-page">
+    <div class="login-card glass">
+      <div class="brand-row">
+        <div class="logo">OA</div>
+        <div>
+          <h1>Office Attendance System</h1>
+          <p>Attendance, work tracking & task management</p>
+        </div>
+      </div>
+      <div class="switcher">
+        <button class="active" data-login="admin">Admin Login</button>
+        <button data-login="employee">Employee Login</button>
+      </div>
+      <form id="adminLogin" class="login-form">
+        <label>Email</label>
+        <input id="adminEmail" type="email" placeholder="admin@office.com" required>
+        <label>Password</label>
+        <input id="adminPassword" type="password" placeholder="admin123" required>
+        <button class="primary-btn" type="submit">Login as Admin</button>
+        <small>Default demo admin: admin@office.com / admin123</small>
+      </form>
+      <form id="employeeLogin" class="login-form hidden">
+        <label>Employee ID</label>
+        <input id="employeeLoginId" placeholder="EMP001" required>
+        <label>Password</label>
+        <input id="employeeLoginPassword" type="password" placeholder="Password" required>
+        <button class="primary-btn" type="submit">Login as Employee</button>
+      </form>
+    </div>
+  </section>
+
+  <main id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-brand"><span class="logo small">OA</span><b>Office System</b></div>
+      <nav id="adminNav" class="nav hidden">
+        <button class="active" data-view="adminDashboard">Dashboard</button>
+        <button data-view="employeesView">Employees</button>
+        <button data-view="departmentsView">Departments</button>
+        <button data-view="tasksView">Tasks</button>
+        <button data-view="attendanceView">Attendance</button>
+        <button data-view="requestsView">Requests</button>
+        <button data-view="payrollView">Payroll</button>
+        <button data-view="settingsView">Settings</button>
+      </nav>
+      <nav id="employeeNav" class="nav hidden">
+        <button class="active" data-view="employeeDashboard">Dashboard</button>
+        <button data-view="employeeTasksView">My Tasks</button>
+        <button data-view="employeeSummaryView">Summary</button>
+        <button data-view="employeeMessageView">Message / Leave</button>
+      </nav>
+      <button id="logoutBtn" class="ghost-btn logout">Logout</button>
+    </aside>
+
+    <section class="content">
+      <header class="topbar">
+        <div>
+          <p class="crumb">Portal › Dashboard</p>
+          <h2 id="pageTitle">Good morning</h2>
+        </div>
+        <div class="top-actions">
+          <span id="todayText" class="pill"></span>
+          <span id="userBadge" class="user-badge"></span>
+        </div>
+      </header>
+
+      <section id="adminDashboard" class="view"></section>
+      <section id="employeesView" class="view hidden"></section>
+      <section id="departmentsView" class="view hidden"></section>
+      <section id="tasksView" class="view hidden"></section>
+      <section id="attendanceView" class="view hidden"></section>
+      <section id="requestsView" class="view hidden"></section>
+      <section id="payrollView" class="view hidden"></section>
+      <section id="settingsView" class="view hidden"></section>
+      <section id="employeeDashboard" class="view hidden"></section>
+      <section id="employeeTasksView" class="view hidden"></section>
+      <section id="employeeSummaryView" class="view hidden"></section>
+      <section id="employeeMessageView" class="view hidden"></section>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
