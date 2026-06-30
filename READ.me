@@ -1,55 +1,15 @@
-# Office Attendance System — V3.3 Task Collaboration
-
-## Added in this version
-- Admin reference file upload while creating task
-- Admin can add more reference files later
-- Employee final work upload with version history
-- Task details popup
-- Task comments
-- Revision request workflow
-- Task timeline/history
-- Admin approval + star rating
-- Work timer start/stop
-- Firebase Storage integration
-
-## Files
-Upload/replace these files in GitHub Pages:
-- `index.html`
-- `style.css`
-- `app.js`
-- `README.md`
-
-## Firebase Firestore Rules for testing
-```js
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
-
-## Firebase Storage Rules for testing
-Go to Firebase Console → Build → Storage → Rules and publish:
-
-```js
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
-
-These test rules are open. Use only during development.
-
-## Login
-Admin demo login:
-- Email: `admin@office.com`
-- Password: `admin123`
-
-Employee login is created from Admin → Employees.
+Office Attendance System - V3.4
+Update:
+Image/file upload option removed.
+Firebase Storage no longer needed.
+Task create form now has Reference Link field only.
+Admin rating now shows on task card, task details, employee dashboard, and employee summary.
+Points system added: 1 star = 20 points, 5 stars = 100 points.
+Upload these files to GitHub Pages:
+index.html
+style.css
+app.js
+README.md
+Admin login:
+admin@office.com
+admin123
