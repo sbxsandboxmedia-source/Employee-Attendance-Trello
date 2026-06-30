@@ -1,43 +1,17 @@
-# Office Attendance System — V3.1 Real Task Management
-
-## Upload to GitHub Pages
-Replace these files in your repository:
-- index.html
-- style.css
-- app.js
-
-## Login
+Office Attendance System — V3.2
+Firebase-based Office Attendance & Work Tracking System.
+V3.2 Added
+Kanban Drag & Drop task board
+Employee can move tasks: To Do → In Progress → Review
+Employee cannot mark Final Complete
+Admin can final complete only after task is in Review
+Admin can reopen completed task back to Review
+Task timeline/activity log updates on every movement
+Login
 Admin:
-- Email: admin@office.com
-- Password: admin123
-
+Email: admin@office.com
+Password: admin123
 Employee:
-- Use the Employee ID and Password created from Admin > Employees.
-
-## Firebase
-Firestore test rule for development:
-
-```js
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
-
-## V3.1 Features
-- Task Create / Edit / Delete
-- Auto task code like SBX-SMM-0001
-- Business dropdown: SBX Media, SIA Jewels, YOLOX Fashion, Personal
-- Department dropdown from Firebase
-- Assign task to employee
-- Priority, due date, estimated hours, description
-- Admin Kanban: To Do, In Progress, Review, Completed
-- Employee Kanban: To Do, In Progress, Review
-- Final Complete only by admin
-- Task filters: business, employee, status, search
-- Task activity timeline
-- Employee task notes
+Use Employee ID and password created from Admin panel.
+Firebase
+Use Firestore test mode while developing.
